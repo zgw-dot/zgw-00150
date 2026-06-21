@@ -13,6 +13,7 @@
   var HANDLER_NOTES_KEY = 'cvp_handler_notes';
   var EXPORT_RESULT_KEY = 'cvp_last_export';
   var VERSION_CACHE_KEY = 'cvp_versions';
+  var SESSIONS_KEY = 'cvp_sessions';
   var DEPARTMENTS = [
     '校长办公室', '教务处', '学生处', '后勤处', '保卫处',
     '计算机学院', '文学院', '理学院', '工学院'
@@ -105,10 +106,67 @@
   function getExportResult() { return loadJSON(EXPORT_RESULT_KEY, null); }
   function saveExportResult(result) {
     saveJSON(EXPORT_RESULT_KEY, Object.assign({}, result, { exportedAt: nowISO() }));
+    triggerAutoSave();
   }
 
   function getLocalVersions() { return loadJSON(VERSION_CACHE_KEY, { visitors: [], pending: [] }); }
   function saveLocalVersions(versions) { saveJSON(VERSION_CACHE_KEY, versions); }
+
+  function getSessionsCache() { return loadJSON(SESSIONS_KEY, []); }
+  function saveSessionsCache(sessions) { saveJSON(SESSIONS_KEY, sessions); }
+
+  function fetchSessionsFromServer() {
+    if (!isOnline() || getRole() !== 'approver') return Promise.resolve([]);
+    return fetchJSON('/api/sessions?role=approver&approver=' + encodeURIComponent(deviceName) + '&deviceId=' + encodeURIComponent(deviceId), { method: 'GET' })
+      .then(function (res) {
+        if (res && res.ok) {
+          saveSessionsCache(res.sessions || []);
+          return res.sessions || [];
+        }
+        return [];
+      }).catch(function () { return getSessionsCache(); });
+  }
+
+  function saveSessionToServer() {
+    if (!isOnline() || getRole() !== 'approver') return Promise.resolve(null);
+    var state = {
+      currentPage: currentPage,
+      currentFilter: currentFilter,
+      currentDeptFilter: currentDeptFilter,
+      currentStatusFilter: currentStatusFilter,
+      currentPendingStatusFilter: currentPendingStatusFilter,
+      lastSync: getLastSync(),
+      sourceDevice: deviceId,
+      sourceDeviceName: deviceName,
+      handlerNotes: getHandlerNotes(),
+      lastExport: getExportResult(),
+      openManualRecordId: getContext().openManualRecordId || null,
+      savedAt: nowISO()
+    };
+    return fetchJSON('/api/sessions?role=approver', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        deviceId: deviceId,
+        deviceName: deviceName,
+        approver: deviceName,
+        approverRole: 'approver',
+        state: state
+      })
+    }).then(function (res) {
+      if (res && res.ok) return res.session;
+      return null;
+    }).catch(function () { return null; });
+  }
+
+  function deleteSessionFromServer(sessionId) {
+    if (!isOnline() || getRole() !== 'approver') return Promise.resolve(false);
+    return fetchJSON('/api/sessions/' + sessionId + '?role=approver&approver=' + encodeURIComponent(deviceName), {
+      method: 'DELETE'
+    }).then(function (res) {
+      return res && res.ok;
+    }).catch(function () { return false; });
+  }
 
   function restoreContextFromCache() {
     var ctx = getContext();
@@ -957,6 +1015,89 @@
       '</div>';
   }
 
+  function renderHandoverCenter() {
+    var sessions = getSessionsCache();
+    var pending = getPending();
+    var records = getRecords();
+    var notes = getHandlerNotes();
+    var lastSync = getLastSync();
+    var lastExport = getExportResult();
+    var notesCount = Object.keys(notes).length;
+    var activeNotes = Object.values(notes).filter(function (n) { return n && n.note && n.note.trim(); }).length;
+
+    var pageLabel = {
+      register: '访客登记', records: '记录列表', approval: '审批工作台',
+      pending: '待处理中心', audit: '审计日志', conflicts: '本机冲突',
+      export: '数据导出', handover: '交接恢复中心'
+    }[currentPage] || currentPage;
+
+    var stateHtml = '<div class="diagnosis-grid" style="margin-bottom:14px;">' +
+      '<div class="diag-item"><span class="diag-label">当前页签</span><span class="diag-value">' + escapeHtml(pageLabel) + '</span></div>' +
+      '<div class="diag-item"><span class="diag-label">最近同步</span><span class="diag-value">' + (lastSync ? formatDT(lastSync) : '未同步') + '</span></div>' +
+      '<div class="diag-item"><span class="diag-label">部门筛选</span><span class="diag-value">' + escapeHtml(currentDeptFilter || '全部') + '</span></div>' +
+      '<div class="diag-item"><span class="diag-label">状态筛选</span><span class="diag-value">' + escapeHtml(currentStatusFilter ? (STATUS_MAP[currentStatusFilter] || currentStatusFilter) : '全部') + '</span></div>' +
+      '<div class="diag-item"><span class="diag-label">待处理队列</span><span class="diag-value">' + pending.filter(function (p) { return p.status !== 'done'; }).length + ' 条</span></div>' +
+      '<div class="diag-item"><span class="diag-label">备注草稿</span><span class="diag-value">' + activeNotes + ' 条</span></div>' +
+      '<div class="diag-item diag-full"><span class="diag-label">来源设备</span><span class="diag-value">' + escapeHtml(deviceName) + ' (' + deviceId.slice(-8) + ')</span></div>';
+
+    if (lastExport && lastExport.exportedAt) {
+      var kindLabel = lastExport.filters && lastExport.filters.kind ? (lastExport.filters.kind === 'audit' ? '审计' : lastExport.filters.kind === 'pending' ? '待处理' : '访客') : '';
+      var fmtLabel = lastExport.filters && lastExport.filters.format ? lastExport.filters.format.toUpperCase() : '';
+      stateHtml += '<div class="diag-item diag-full"><span class="diag-label">最近导出</span><span class="diag-value">' +
+        escapeHtml(kindLabel + ' ' + fmtLabel + ' · ' + formatDT(lastExport.exportedAt)) + '</span></div>';
+    }
+    stateHtml += '</div>';
+
+    var sessionsHtml = '';
+    if (sessions.length === 0) {
+      sessionsHtml = '<div class="empty-state"><div class="emoji">💾</div><p>暂无服务端会话快照</p><p style="font-size:12px;color:var(--gray-500);margin-top:4px;">点击下方「保存当前会话」创建可恢复快照</p></div>';
+    } else {
+      sessions.forEach(function (s) {
+        var st = s.state || {};
+        var ageMs = Date.now() - new Date(s.updatedAt).getTime();
+        var ageLabel = ageMs < 60000 ? '刚刚' : ageMs < 3600000 ? Math.floor(ageMs / 60000) + ' 分钟前' : ageMs < 86400000 ? Math.floor(ageMs / 3600000) + ' 小时前' : formatDT(s.updatedAt);
+        var sPage = st.currentPage ? ({ register: '登记', records: '记录', approval: '审批', pending: '待处理', audit: '审计', conflicts: '冲突', export: '导出', handover: '交接' }[st.currentPage] || st.currentPage) : '-';
+        var sDept = st.currentDeptFilter || '全部';
+        var sStatus = st.currentStatusFilter ? (STATUS_MAP[st.currentStatusFilter] || st.currentStatusFilter) : '全部';
+        var sExport = '';
+        if (st.lastExport && st.lastExport.exportedAt) {
+          var ek = st.lastExport.filters && st.lastExport.filters.kind;
+          var ef = st.lastExport.filters && st.lastExport.filters.format;
+          sExport = ' · 最近导出:' + (ek || '') + (ef ? (' ' + ef.toUpperCase()) : '');
+        }
+        sessionsHtml += '<div class="card session-card">' +
+          '<div class="card-header">' +
+          '<span class="card-title" style="font-size:14px;">💾 会话快照</span>' +
+          '<span class="meta-tag">' + escapeHtml(ageLabel) + '</span>' +
+          '</div>' +
+          '<div class="card-body">' +
+          '<p><strong>设备：</strong>' + escapeHtml(s.deviceName || s.deviceId || '-') + '</p>' +
+          '<p><strong>页签：</strong>' + escapeHtml(sPage) + ' · <strong>部门：</strong>' + escapeHtml(sDept) + ' · <strong>状态：</strong>' + escapeHtml(sStatus) + '</p>' +
+          '<p><strong>最近同步：</strong>' + (st.lastSync ? formatDT(st.lastSync) : '-') + escapeHtml(sExport) + '</p>' +
+          '<p style="font-size:12px;color:var(--gray-500);margin-top:6px;">ID: ' + escapeHtml(s.id.slice(-12)) + '</p>' +
+          '</div>' +
+          '<div class="card-footer">' +
+          '<button class="small-btn primary" data-action="restore-session" data-sid="' + s.id + '">恢复此会话</button>' +
+          '<button class="small-btn danger" data-action="delete-session" data-sid="' + s.id + '">删除</button>' +
+          '</div>' +
+          '</div>';
+      });
+    }
+
+    return '<div class="content">' +
+      renderSyncBar() +
+      '<div class="section-title">审批交接与恢复中心</div>' +
+      stateHtml +
+      '<div class="tool-bar">' +
+      '<button class="tool-btn" data-action="save-session-now">💾 保存当前会话</button>' +
+      '<button class="tool-btn" data-action="refresh-sessions">🔄 刷新会话列表</button>' +
+      '</div>' +
+      '<div class="divider"></div>' +
+      '<div class="section-title">可恢复会话（服务端持久化）</div>' +
+      sessionsHtml +
+      '</div>';
+  }
+
   function renderNav(role, page) {
     if (!role) return '';
     var tabs = [];
@@ -969,6 +1110,7 @@
       tabs.push({ key: 'pending', label: '待处理' });
       tabs.push({ key: 'records', label: '记录' });
       tabs.push({ key: 'audit', label: '审计' });
+      tabs.push({ key: 'handover', label: '交接' });
     }
     tabs.push({ key: 'conflicts', label: '冲突' });
     tabs.push({ key: 'export', label: '导出' });
@@ -1006,6 +1148,7 @@
         currentStatusFilter: currentStatusFilter,
         currentPendingStatusFilter: currentPendingStatusFilter
       });
+      triggerAutoSave();
     }
 
     var body = '';
@@ -1033,6 +1176,9 @@
           break;
         case 'export':
           body = renderExportPage();
+          break;
+        case 'handover':
+          body = renderHandoverCenter();
           break;
         default:
           body = renderGuardForm();
@@ -1143,6 +1289,7 @@
         saveHandlerNote(recordId, this.value);
         var hint = document.getElementById('note-saved-hint');
         if (hint) hint.textContent = '✓ 已自动保存到本地，刷新后可恢复';
+        triggerAutoSave();
         clearTimeout(saveTimer);
         saveTimer = setTimeout(function () {
           if (hint) hint.textContent = '';
@@ -1206,6 +1353,33 @@
     };
   }
 
+  function restoreSessionFromState(state) {
+    if (!state) return false;
+    if (state.currentPage) currentPage = state.currentPage;
+    if (state.currentFilter !== undefined) currentFilter = state.currentFilter;
+    if (state.currentDeptFilter !== undefined) currentDeptFilter = state.currentDeptFilter;
+    if (state.currentStatusFilter !== undefined) currentStatusFilter = state.currentStatusFilter;
+    if (state.currentPendingStatusFilter !== undefined) currentPendingStatusFilter = state.currentPendingStatusFilter;
+    if (state.lastSync) setLastSync(state.lastSync);
+    if (state.handlerNotes && typeof state.handlerNotes === 'object') {
+      saveJSON(HANDLER_NOTES_KEY, state.handlerNotes);
+    }
+    if (state.lastExport) saveExportResult(state.lastExport);
+    if (state.openManualRecordId) {
+      saveContext({ openManualRecordId: state.openManualRecordId });
+    }
+    return true;
+  }
+
+  var sessionAutoSaveTimer = null;
+  function triggerAutoSave() {
+    if (getRole() !== 'approver') return;
+    if (sessionAutoSaveTimer) clearTimeout(sessionAutoSaveTimer);
+    sessionAutoSaveTimer = setTimeout(function () {
+      saveSessionToServer().catch(function () {});
+    }, 2000);
+  }
+
   function bindEvents() {
     var app = document.getElementById('app');
 
@@ -1249,6 +1423,7 @@
           break;
         case 'filter':
           currentFilter = target.getAttribute('data-status');
+          triggerAutoSave();
           render();
           break;
         case 'nav':
@@ -1262,7 +1437,10 @@
             if (isOnline()) fetchAuditFromServer().then(render).catch(render);
           } else if (currentPage === 'pending') {
             if (isOnline()) fetchPendingFromServer().then(render).catch(render);
+          } else if (currentPage === 'handover') {
+            if (isOnline()) fetchSessionsFromServer().then(render).catch(render);
           }
+          triggerAutoSave();
           render();
           break;
         case 'approve':
@@ -1394,6 +1572,50 @@
         case 'clear-expired':
           clearExpired();
           break;
+        case 'save-session-now':
+          saveSessionToServer().then(function (s) {
+            if (s) {
+              toast('会话已保存到服务端', 'success');
+              return fetchSessionsFromServer();
+            } else {
+              toast('保存失败，请检查网络', 'error');
+            }
+          }).then(function () { render(); }).catch(function () { toast('保存失败', 'error'); });
+          break;
+        case 'refresh-sessions':
+          if (isOnline()) {
+            fetchSessionsFromServer().then(function () { toast('会话列表已更新', 'success'); render(); }).catch(function () { toast('刷新失败', 'error'); });
+          } else { toast('当前离线', 'error'); }
+          break;
+        case 'restore-session':
+          var sid = target.getAttribute('data-sid');
+          var sessions = getSessionsCache();
+          var sess = sessions.find(function (s) { return s.id === sid; });
+          if (!sess) { toast('会话不存在', 'error'); break; }
+          if (confirm('确认恢复此会话？\n\n页签、筛选、备注、导出摘要等将全部恢复到当时状态。\n保存时间：' + formatDT(sess.updatedAt))) {
+            restoreSessionFromState(sess.state);
+            triggerAutoSave();
+            toast('会话已恢复，正在刷新数据...', 'success');
+            if (isOnline()) {
+              pullSync().then(function () { render(); }).catch(function () { render(); });
+            } else {
+              render();
+            }
+          }
+          break;
+        case 'delete-session':
+          var delSid = target.getAttribute('data-sid');
+          if (confirm('确认删除此会话快照？此操作不可恢复。')) {
+            deleteSessionFromServer(delSid).then(function (ok) {
+              if (ok) {
+                toast('已删除', 'success');
+                return fetchSessionsFromServer();
+              } else {
+                toast('删除失败', 'error');
+              }
+            }).then(function () { render(); }).catch(function () { render(); });
+          }
+          break;
         case 'close-modal':
           var modal = document.querySelector('.modal-backdrop');
           if (modal) modal.remove();
@@ -1408,6 +1630,7 @@
     if (deptFilter) {
       deptFilter.addEventListener('change', function () {
         currentDeptFilter = this.value;
+        triggerAutoSave();
         render();
       });
     }
@@ -1415,6 +1638,7 @@
     if (statusFilter) {
       statusFilter.addEventListener('change', function () {
         currentStatusFilter = this.value;
+        triggerAutoSave();
         render();
       });
     }
@@ -1422,6 +1646,7 @@
     if (pendingStatusFilter) {
       pendingStatusFilter.addEventListener('change', function () {
         currentPendingStatusFilter = this.value;
+        triggerAutoSave();
         render();
       });
     }
@@ -1901,7 +2126,14 @@
       }, 300);
     }
     if (isOnline() && role) {
-      fetchVersionsFromServer().then(function (v) {
+      var serverSessionPromise = role === 'approver' ? fetchSessionsFromServer() : Promise.resolve([]);
+      Promise.all([
+        fetchVersionsFromServer(),
+        pullSync(),
+        serverSessionPromise
+      ]).then(function (results) {
+        var v = results[0];
+        var sessions = results[2] || [];
         if (v) {
           var conflicts = detectConflicts(v);
           saveLocalVersions({ visitors: v.visitors, pending: v.pending, serverTime: v.serverTime });
@@ -1909,10 +2141,22 @@
             setTimeout(function () { showConflictAlert(conflicts); }, 500);
           }
         }
-        return pullSync();
-      }).then(function () {
+        if (sessions && sessions.length > 0 && role === 'approver') {
+          var newest = sessions[0];
+          if (newest && newest.state && newest.updatedAt) {
+            var age = Date.now() - new Date(newest.updatedAt).getTime();
+            if (age < 60 * 60 * 1000) {
+              var stPage = newest.state.currentPage || '审批';
+              var stDept = newest.state.currentDeptFilter || '全部';
+              var stStatus = newest.state.currentStatusFilter ? (STATUS_MAP[newest.state.currentStatusFilter] || newest.state.currentStatusFilter) : '全部';
+              console.log('[服务端会话可用] 更新于 ' + formatDT(newest.updatedAt));
+            }
+          }
+        }
         render();
-      }).catch(function () { });
+      }).catch(function () {
+        render();
+      });
     }
   })();
 })();

@@ -171,7 +171,7 @@ async function runAll() {
   assert('保安不能撤销已放行记录（403）', revokeByGuard.status === 403, `got=${revokeByGuard.status}`);
 
   // 越权操作有审计日志
-  let auditRes = await req('GET', '/api/audit');
+  let auditRes = await req('GET', '/api/audit?role=approver');
   const denyLogs = auditRes.body.records.filter(a => a.action === 'permission_denied');
   assert('越权操作写入审计日志', denyLogs.length >= 2, `count=${denyLogs.length}`);
 
@@ -347,17 +347,17 @@ async function runAll() {
 
   console.log('\n[8] 审计日志与导出（CSV/JSON）');
   // 确保有足够审计记录
-  let audit = await req('GET', '/api/audit');
+  let audit = await req('GET', '/api/audit?role=approver');
   assert('审计日志可获取', audit.status === 200 && audit.body.ok);
   assert('包含审批放行日志', audit.body.records.some(a => a.action === 'approved'));
   assert('包含驳回日志', audit.body.records.some(a => a.action === 'rejected'));
   assert('包含撤销尝试被拒日志', audit.body.records.some(a => a.action === 'permission_denied'));
 
-  let auditCSV = await req('GET', '/api/audit?format=csv');
+  let auditCSV = await req('GET', '/api/audit?format=csv&role=approver');
   assert('审计 CSV 可导出（含BOM）',
     auditCSV.status === 200 && (auditCSV.headers['content-type'] || '').includes('text/csv'));
 
-  let auditJSON = await req('GET', '/api/audit?format=json');
+  let auditJSON = await req('GET', '/api/audit?format=json&role=approver');
   assert('审计 JSON 可导出',
     auditJSON.status === 200 && (auditJSON.headers['content-type'] || '').includes('application/json'));
   assert('审计 JSON 包含 count 字段', typeof auditJSON.body.count === 'number');
@@ -409,7 +409,7 @@ async function runAll() {
   assert('审批人可以撤销已放行', revokeByApprover.status === 200 && revokeByApprover.body.ok);
   assert('撤销后状态为 revoked', revokeByApprover.body.record.status === 'revoked');
 
-  let auditRevoke = await req('GET', '/api/audit');
+  let auditRevoke = await req('GET', '/api/audit?role=approver');
   assert('撤销操作写入审计', auditRevoke.body.records.some(a => a.action === 'revoked' && a.recordId === revokeId));
 
   // ---------- [新增] 版本哈希冲突检测接口 ----------
@@ -514,6 +514,138 @@ async function runAll() {
       ['pending_sync', 'pending_approval', 'approved'].includes(r.status) ||
       r.sourceDevice === DEVICE_A));
 
+  // ---------- [新增] 审批交接与恢复中心：会话 API ----------
+  console.log('\n[17] 审批交接与恢复中心：会话保存/读取/删除');
+  const testSessionState = {
+    currentPage: 'approval',
+    currentDeptFilter: '计算机学院',
+    currentStatusFilter: 'pending_approval',
+    lastSync: new Date().toISOString(),
+    sourceDevice: DEVICE_B,
+    handlerNotes: { 'test_record_001': { note: '这条需要复核', updatedAt: new Date().toISOString() } },
+    lastExport: { filters: { kind: 'visitors', format: 'csv', department: '计算机学院' }, exportedAt: new Date().toISOString() }
+  };
+
+  let guardSessionSave = await req('POST', '/api/sessions?role=guard', {
+    deviceId: DEVICE_A,
+    deviceName: DEVICE_A_NAME,
+    approver: DEVICE_A_NAME,
+    approverRole: 'guard',
+    state: testSessionState
+  });
+  assert('保安无法保存审批会话（403）', guardSessionSave.status === 403, `got=${guardSessionSave.status}`);
+
+  let saveResSess = await req('POST', '/api/sessions?role=approver', {
+    deviceId: DEVICE_B,
+    deviceName: DEVICE_B_NAME,
+    approver: DEVICE_B_NAME,
+    approverRole: 'approver',
+    state: testSessionState
+  });
+  assert('审批人保存会话成功', saveResSess.status === 200 && saveResSess.body.ok, `status=${saveResSess.status}`);
+  assert('返回会话含 id', !!saveResSess.body.session && !!saveResSess.body.session.id);
+  assert('返回会话含 state 对象', !!saveResSess.body.session && !!saveResSess.body.session.state);
+  assert('会话 state 保留筛选条件', saveResSess.body.session.state.currentDeptFilter === '计算机学院');
+  assert('会话 state 保留备注草稿',
+    saveResSess.body.session.state.handlerNotes &&
+    saveResSess.body.session.state.handlerNotes['test_record_001']);
+
+  const sessionId = saveResSess.body.session.id;
+
+  let guardListSessions = await req('GET', '/api/sessions?role=guard');
+  assert('保安无法列出审批会话（403）', guardListSessions.status === 403);
+
+  let listResSess = await req('GET', '/api/sessions?role=approver&approver=' + encodeURIComponent(DEVICE_B_NAME));
+  assert('审批人可列出会话', listResSess.status === 200 && listResSess.body.ok);
+  assert('会话列表至少包含刚才保存的一条', listResSess.body.sessions.length >= 1);
+  assert('列表中的会话按 updatedAt 倒序',
+    listResSess.body.sessions.length < 2 ||
+    new Date(listResSess.body.sessions[0].updatedAt) >= new Date(listResSess.body.sessions[1].updatedAt));
+
+  let guardGetSession = await req('GET', '/api/sessions/' + sessionId + '?role=guard');
+  assert('保安无法读取单条会话（403）', guardGetSession.status === 403);
+
+  let getResSess = await req('GET', '/api/sessions/' + sessionId + '?role=approver');
+  assert('审批人可读取单条会话', getResSess.status === 200 && getResSess.body.ok);
+  assert('单条会话 state 完整保留', getResSess.body.session.state.currentStatusFilter === 'pending_approval');
+  assert('单条会话最近导出摘要保留',
+    getResSess.body.session.state.lastExport && getResSess.body.session.state.lastExport.filters);
+
+  // 覆盖保存（同一审批人 + 同一设备）
+  const updatedState = { ...testSessionState, currentStatusFilter: 'pending_manual', currentDeptFilter: '教务处' };
+  let saveResSess2 = await req('POST', '/api/sessions?role=approver', {
+    deviceId: DEVICE_B,
+    deviceName: DEVICE_B_NAME,
+    approver: DEVICE_B_NAME,
+    approverRole: 'approver',
+    state: updatedState
+  });
+  assert('覆盖同审批人同设备会话成功', saveResSess2.status === 200 && saveResSess2.body.ok);
+  let listResSess2 = await req('GET', '/api/sessions?role=approver&approver=' + encodeURIComponent(DEVICE_B_NAME));
+  assert('覆盖后设备+审批人维度会话数不重复累加',
+    listResSess2.body.sessions.filter(s => s.deviceId === DEVICE_B && s.approver === DEVICE_B_NAME).length === 1);
+  assert('覆盖后最新会话状态已更新',
+    listResSess2.body.sessions[0].state.currentStatusFilter === 'pending_manual');
+
+  // 删除会话
+  let guardDeleteSession = await req('DELETE', '/api/sessions/' + sessionId + '?role=guard');
+  assert('保安无法删除审批会话（403）', guardDeleteSession.status === 403);
+
+  let delResSess = await req('DELETE', '/api/sessions/' + sessionId + '?role=approver&approver=' + encodeURIComponent(DEVICE_B_NAME));
+  assert('审批人删除会话成功', delResSess.status === 200 && delResSess.body.ok);
+
+  let getAfterDel = await req('GET', '/api/sessions/' + sessionId + '?role=approver');
+  assert('删除后会话不再可读取（404）', getAfterDel.status === 404);
+
+  // ---------- [新增] 会话持久化（服务重启后仍在） ----------
+  console.log('\n[18] 会话持久化：写入数据文件可恢复');
+  const persistentState = {
+    currentPage: 'handover',
+    currentDeptFilter: '教务处',
+    currentStatusFilter: 'pending_manual',
+    lastSync: new Date().toISOString(),
+    handlerNotes: { 'persist_test_001': { note: '服务重启后也要能恢复这条备注' } },
+    openManualRecordId: 'persist_test_001'
+  };
+  let persistSave = await req('POST', '/api/sessions?role=approver', {
+    deviceId: DEVICE_B,
+    deviceName: DEVICE_B_NAME,
+    approver: DEVICE_B_NAME,
+    approverRole: 'approver',
+    state: persistentState
+  });
+  assert('持久化会话保存成功', persistSave.status === 200 && persistSave.body.ok);
+  const persistSessionId = persistSave.body.session.id;
+
+  const DATA_FILE_SESS = path.join(__dirname, '..', 'data', 'visitors.json');
+  try {
+    const rawSess = fs.readFileSync(DATA_FILE_SESS, 'utf-8');
+    const dataSess = JSON.parse(rawSess);
+    assert('approvalSessions 数组持久化', Array.isArray(dataSess.approvalSessions));
+    assert('保存的会话已写入文件', dataSess.approvalSessions.some(s => s.id === persistSessionId));
+    const fileSession = dataSess.approvalSessions.find(s => s.id === persistSessionId);
+    assert('文件中会话 state 含备注草稿',
+      fileSession.state && fileSession.state.handlerNotes &&
+      fileSession.state.handlerNotes['persist_test_001']);
+    assert('文件中会话 state 含页签和筛选',
+      fileSession.state.currentPage === 'handover' &&
+      fileSession.state.currentDeptFilter === '教务处');
+  } catch (e) {
+    assert('会话数据文件可读可解析', false, e.message);
+  }
+
+  // ---------- [新增] 审计权限边界：无角色/匿名用户被拒 ----------
+  console.log('\n[19] 审计权限边界：无角色/匿名被拒');
+  let anonAudit = await req('GET', '/api/audit');
+  assert('无 role 参数访问审计被拒（403）', anonAudit.status === 403);
+  let anonAuditCSV = await req('GET', '/api/audit?format=csv');
+  assert('无角色导出审计 CSV 被拒（403）', anonAuditCSV.status === 403);
+  let anonAuditJSON = await req('GET', '/api/audit?format=json');
+  assert('无角色导出审计 JSON 被拒（403）', anonAuditJSON.status === 403);
+
+  let anonPendingExport = await req('GET', '/api/export/pending?format=json');
+  assert('无角色导出待处理被拒（403）', anonPendingExport.status === 403);
+
   // ---------- Summary ----------
   console.log('\n==================== 测试结果 ====================');
   console.log(`  通过: ${passed}`);
@@ -524,14 +656,22 @@ async function runAll() {
   }
   console.log('==================================================\n');
   console.log('[浏览器回归验证步骤提示]');
+  console.log('  【审批交接与恢复中心 · 浏览器回归】');
   console.log('  1) 启动服务后访问 http://localhost:3000');
   console.log('  2) 选择审批人角色，进入审批页');
   console.log('  3) 设置部门=计算机学院 + 状态=待审批，在任意待处理记录点击【人工处理】');
-  console.log('  4) 在备注框输入一段处理说明，等待出现「已自动保存到本地」提示');
+  console.log('  4) 在备注框输入一段处理说明，等待出现「已自动保存到本地，刷新后可恢复」提示');
   console.log('  5) 手动执行浏览器刷新（F5 / Ctrl+R）');
   console.log('  6) 验证：页面仍停留在审批人视角、筛选条件保留、弹窗询问是否继续处理、备注内容自动恢复');
-  console.log('  7) 进入导出页，确认「最近导出」卡片展示刚才的筛选条件');
-  console.log('  8) 重启服务（node server.js），再次刷新确认待处理、备注、筛选仍然恢复');
+  console.log('  7) 进入【交接】页签（审批人专属导航），确认看到当前状态诊断卡（页签/筛选/队列/备注/设备等）');
+  console.log('  8) 点击「💾 保存当前会话」，提示保存成功后，会话卡片出现在下方列表');
+  console.log('  9) 在导出页随便导出一条访客 CSV，再回到【交接】页，确认「最近导出」信息已更新到诊断卡和会话快照');
+  console.log('  10) 在【交接】页切换部门/状态筛选，等待 2 秒后点「🔄 刷新会话列表」，确认会话已自动覆盖保存（最新筛选已更新）');
+  console.log('  11) 点会话卡片的「恢复此会话」，确认筛选、备注、导出摘要全部恢复');
+  console.log('  12) 【服务重启验证】保持浏览器页面打开，在终端重启 node server.js');
+  console.log('  13) 服务起来后，回到浏览器刷新，进入【交接】页，点「🔄 刷新会话列表」，验证：刚才的会话仍存在，可再次恢复');
+  console.log('  14) 验证保安角色：切换为保安，底部导航不应出现【交接】页签');
+  console.log('  15) 导出权限验证：不登录或切换保安，尝试访问 /api/audit?format=csv 应返回 403');
   console.log('==================================================\n');
 
   process.exit(failed > 0 ? 1 : 0);

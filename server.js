@@ -49,7 +49,8 @@ function ensureDataDir() {
       visitors: [],
       syncLog: [],
       auditLog: [],
-      pendingQueue: []
+      pendingQueue: [],
+      approvalSessions: []
     }, null, 2));
   }
 }
@@ -62,6 +63,7 @@ function readData() {
   if (!data.syncLog) data.syncLog = [];
   if (!data.auditLog) data.auditLog = [];
   if (!data.pendingQueue) data.pendingQueue = [];
+  if (!data.approvalSessions) data.approvalSessions = [];
   return data;
 }
 
@@ -402,10 +404,11 @@ app.post('/api/sync/pull', (req, res) => {
 
 app.get('/api/visitors', (req, res) => {
   const data = readData();
-  const { department, status, id, name, role } = req.query;
+  const { department, status, id, name, role, deviceId } = req.query;
+  const effectiveRole = role || req.headers['x-role'];
   let list = data.visitors;
-  if (role === 'guard') {
-    list = list.filter(v => ['pending_sync', 'pending_approval', 'approved'].includes(v.status) || v.sourceDevice === req.query.deviceId);
+  if (effectiveRole === 'guard') {
+    list = list.filter(v => ['pending_sync', 'pending_approval', 'approved'].includes(v.status) || v.sourceDevice === deviceId);
   }
   if (department) list = list.filter(v => v.department === department);
   if (status) list = list.filter(v => v.status === status);
@@ -548,10 +551,11 @@ app.patch('/api/visitors/:id', (req, res) => {
 
 app.get('/api/pending', (req, res) => {
   const data = readData();
-  const { status, sourceDevice, role, department, conflictType } = req.query;
+  const { status, sourceDevice, role, department, conflictType, deviceId } = req.query;
+  const effectiveRole = role || req.headers['x-role'];
   let list = data.pendingQueue;
-  if (role === 'guard') {
-    list = list.filter(p => p.sourceDevice === req.query.deviceId ||
+  if (effectiveRole === 'guard') {
+    list = list.filter(p => p.sourceDevice === deviceId ||
       ['overlap_conflict', 'invalid_time'].includes(p.conflictType));
   }
   if (status) list = list.filter(p => p.status === status);
@@ -725,7 +729,8 @@ app.post('/api/pending/:recordId/resolve', (req, res) => {
 app.get('/api/audit', (req, res) => {
   const data = readData();
   const { recordId, action, operator, since, until, format, role, department, operatorRole } = req.query;
-  if (role === 'guard') {
+  const effectiveRole = role || req.headers['x-role'];
+  if (effectiveRole !== 'approver') {
     return res.status(403).json({ ok: false, error: '审计日志仅审批人可查看' });
   }
   let list = data.auditLog.slice();
@@ -778,11 +783,12 @@ app.get('/api/audit', (req, res) => {
 app.get('/api/export', (req, res) => {
   const data = readData();
   const { format = 'json', department, status, role, deviceId } = req.query;
-  if (role === 'guard' && !['pending_sync', 'pending_approval', 'approved', ''].includes(status || '')) {
+  const effectiveRole = role || req.headers['x-role'];
+  if (effectiveRole === 'guard' && !['pending_sync', 'pending_approval', 'approved', ''].includes(status || '')) {
     return res.status(403).json({ ok: false, error: '保安仅可导出待同步/待审批/已放行记录' });
   }
   let records = data.visitors.slice();
-  if (role === 'guard') {
+  if (effectiveRole === 'guard') {
     records = records.filter(v => v.sourceDevice === deviceId ||
       ['pending_sync', 'pending_approval', 'approved'].includes(v.status));
   }
@@ -830,7 +836,8 @@ app.get('/api/export', (req, res) => {
 app.get('/api/export/pending', (req, res) => {
   const data = readData();
   const { format = 'json', department, conflictType, sourceDevice, role } = req.query;
-  if (role === 'guard') {
+  const effectiveRole = role || req.headers['x-role'];
+  if (effectiveRole !== 'approver') {
     return res.status(403).json({ ok: false, error: '待处理中心导出仅审批人可访问' });
   }
   let list = data.pendingQueue.slice();
@@ -879,6 +886,105 @@ app.get('/api/export/pending', (req, res) => {
     res.header('Content-Type', 'application/json');
     res.header('Content-Disposition', 'attachment; filename="pending_queue.json"');
     res.json({ exportedAt: new Date().toISOString(), count: enriched.length, records: enriched });
+  }
+});
+
+app.post('/api/sessions', requireApprover, (req, res) => {
+  try {
+    const data = readData();
+    const { deviceId, deviceName, approver, approverRole, state } = req.body;
+    if (!approver) {
+      return res.status(400).json({ ok: false, error: '审批人信息必填' });
+    }
+    if (!state) {
+      return res.status(400).json({ ok: false, error: '会话状态必填' });
+    }
+    const now = new Date().toISOString();
+    const sessionId = generateId('sess_');
+    const session = {
+      id: sessionId,
+      deviceId: deviceId || '',
+      deviceName: deviceName || '',
+      approver: approver,
+      approverRole: approverRole || 'approver',
+      state: state,
+      createdAt: now,
+      updatedAt: now
+    };
+
+    const existingIdx = data.approvalSessions.findIndex(s =>
+      s.approver === approver && s.deviceId === (deviceId || '')
+    );
+    if (existingIdx >= 0) {
+      session.id = data.approvalSessions[existingIdx].id;
+      session.createdAt = data.approvalSessions[existingIdx].createdAt;
+      data.approvalSessions[existingIdx] = session;
+    } else {
+      data.approvalSessions.push(session);
+    }
+
+    addAuditLog(data, {
+      action: 'session_save',
+      operator: approver,
+      operatorRole: approverRole || 'approver',
+      detail: { deviceId, deviceName, sessionId: session.id },
+      note: '保存审批会话快照'
+    });
+
+    writeData(data);
+    res.json({ ok: true, session });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/sessions', requireApprover, (req, res) => {
+  try {
+    const data = readData();
+    const { approver, deviceId } = req.query;
+    let list = data.approvalSessions.slice();
+    if (approver) list = list.filter(s => s.approver === approver);
+    if (deviceId) list = list.filter(s => s.deviceId === deviceId);
+    list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    res.json({ ok: true, sessions: list });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/sessions/:id', requireApprover, (req, res) => {
+  try {
+    const data = readData();
+    const session = data.approvalSessions.find(s => s.id === req.params.id);
+    if (!session) return res.status(404).json({ ok: false, error: '会话不存在' });
+    res.json({ ok: true, session });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.delete('/api/sessions/:id', requireApprover, (req, res) => {
+  try {
+    const data = readData();
+    const idx = data.approvalSessions.findIndex(s => s.id === req.params.id);
+    if (idx < 0) return res.status(404).json({ ok: false, error: '会话不存在' });
+    const removed = data.approvalSessions[idx];
+    data.approvalSessions.splice(idx, 1);
+    addAuditLog(data, {
+      action: 'session_delete',
+      operator: req.query.approver || removed.approver,
+      operatorRole: 'approver',
+      detail: { sessionId: req.params.id },
+      note: '删除审批会话'
+    });
+    writeData(data);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 

@@ -676,3 +676,17 @@ html, body {
   color: var(--gray-600);
   line-height: 1.6;
 }
+
+.session-card {
+  border-left: 4px solid var(--primary);
+  background: linear-gradient(135deg, #fff 0%, #f8fafc 100%);
+}
+
+.session-card .card-body p {
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.session-card .card-footer {
+  border-top: 1px dashed var(--gray-200);
+}
