@@ -29,7 +29,7 @@
       "validEnd": "2026-06-21T05:43:00.000Z",
       "escort": "",
       "entrance": "西门",
-      "status": "pending_sync",
+      "status": "pending_approval",
       "deviceId": "dev_mqn3wq6w_r34xt9",
       "deviceName": "PC",
       "sourceDevice": "dev_mqn3wq6w_r34xt9",
@@ -37,6 +37,76 @@
       "createdAt": "2026-06-21T01:45:17.693Z",
       "updatedAt": "2026-06-21T01:45:17.693Z",
       "syncedAt": "2026-06-21T01:45:18.016Z"
+    },
+    {
+      "validStart": "2026-06-21T10:00:00.000Z",
+      "name": "非法时段测试",
+      "status": "approved",
+      "entrance": "东门",
+      "idTail": "9999",
+      "department": "测试部门",
+      "updatedAt": "2026-06-21T02:21:30.764Z",
+      "createdAt": "2026-06-21T00:00:00.000Z",
+      "validEnd": "2026-06-21T08:00:00.000Z",
+      "escort": "",
+      "id": "v_test_invalid_001",
+      "syncedAt": "2026-06-21T02:21:30.764Z",
+      "sourceDevice": "test_device",
+      "sourceDeviceName": "TestDevice",
+      "approver": "Test",
+      "approverRole": "approver"
+    },
+    {
+      "status": "pending_approval",
+      "createdAt": "2026-06-21T00:00:00.000Z",
+      "department": "计算机学院",
+      "updatedAt": "2026-06-21T00:00:00.000Z",
+      "escort": "王老师",
+      "entrance": "南门",
+      "idTail": "7777",
+      "id": "v_test_status_001",
+      "validStart": "2026-06-21T08:00:00.000Z",
+      "validEnd": "2026-06-21T12:00:00.000Z",
+      "name": "状态流转测试",
+      "syncedAt": "2026-06-21T02:27:37.520Z",
+      "sourceDevice": "test_device",
+      "sourceDeviceName": "TestDevice"
+    },
+    {
+      "id": "v_mqn666sl_p5zy3g",
+      "name": "王五",
+      "idTail": "4321",
+      "department": "学生处",
+      "validStart": "2026-06-21T02:29:00.000Z",
+      "validEnd": "2026-06-21T06:29:00.000Z",
+      "escort": "",
+      "entrance": "北门",
+      "status": "pending_approval",
+      "deviceId": "dev_mqn3wq6w_r34xt9",
+      "deviceName": "PC",
+      "sourceDevice": "dev_mqn3wq6w_r34xt9",
+      "sourceDeviceName": "PC",
+      "createdAt": "2026-06-21T02:30:39.333Z",
+      "updatedAt": "2026-06-21T02:30:39.333Z",
+      "syncedAt": "2026-06-21T02:30:39.661Z"
+    },
+    {
+      "idTail": "6601",
+      "updatedAt": "2026-06-21T02:39:12.648Z",
+      "validStart": "2026-06-21T09:00:00.000Z",
+      "escort": "陈老师",
+      "entrance": "东门",
+      "department": "计算机学院",
+      "name": "复核成功链路",
+      "createdAt": "2026-06-21T08:55:00.000Z",
+      "status": "approved",
+      "id": "rv_pass_001",
+      "validEnd": "2026-06-21T11:00:00.000Z",
+      "syncedAt": "2026-06-21T02:39:12.648Z",
+      "sourceDevice": "reviewer_device",
+      "sourceDeviceName": "ReviewerDevice",
+      "approver": "ReviewerApprover",
+      "approverRole": "approver"
     }
   ],
   "syncLog": [
@@ -52,6 +122,48 @@
       "deviceId": "dev_mqn3wq6w_r34xt9",
       "deviceName": "PC",
       "recordId": "v_mqn4jurh_v2e8tl",
+      "action": "created"
+    },
+    {
+      "time": "2026-06-21T02:21:12.779Z",
+      "deviceId": "test_device",
+      "deviceName": "TestDevice",
+      "recordId": "v_test_invalid_001",
+      "action": "created"
+    },
+    {
+      "time": "2026-06-21T02:26:37.548Z",
+      "deviceId": "test_device",
+      "deviceName": "TestDevice",
+      "recordId": "v_test_invalid_002",
+      "action": "invalid_time"
+    },
+    {
+      "time": "2026-06-21T02:27:37.520Z",
+      "deviceId": "test_device",
+      "deviceName": "TestDevice",
+      "recordId": "v_test_status_001",
+      "action": "created"
+    },
+    {
+      "time": "2026-06-21T02:30:39.661Z",
+      "deviceId": "dev_mqn3wq6w_r34xt9",
+      "deviceName": "PC",
+      "recordId": "v_mqn666sl_p5zy3g",
+      "action": "created"
+    },
+    {
+      "time": "2026-06-21T02:38:41.409Z",
+      "deviceId": "reviewer_device",
+      "deviceName": "ReviewerDevice",
+      "recordId": "rv_fail_001",
+      "action": "invalid_time"
+    },
+    {
+      "time": "2026-06-21T02:38:41.415Z",
+      "deviceId": "reviewer_device",
+      "deviceName": "ReviewerDevice",
+      "recordId": "rv_pass_001",
       "action": "created"
     }
   ]

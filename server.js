@@ -39,6 +39,11 @@ function hasOverlap(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && bStart < aEnd;
 }
 
+function isValidTimeRange(validStart, validEnd) {
+  if (!validStart || !validEnd) return false;
+  return new Date(validEnd).getTime() > new Date(validStart).getTime();
+}
+
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, time: new Date().toISOString() });
 });
@@ -55,10 +60,16 @@ app.post('/api/sync/push', (req, res) => {
       const existing = data.visitors.find(v => v.id === rec.id);
 
       if (existing) {
-        if (forceOverwrite) {
+        const newStatus = rec.status === 'pending_sync' ? 'pending_approval' : rec.status;
+        const mergedRec = { ...rec, status: newStatus };
+
+        if (!isValidTimeRange(rec.validStart, rec.validEnd)) {
+          status = 'invalid_time';
+          conflict = { reason: '结束时间必须晚于开始时间' };
+        } else if (forceOverwrite) {
           data.visitors = data.visitors.map(v =>
             v.id === rec.id
-              ? { ...v, ...rec, syncedAt: new Date().toISOString(), sourceDevice: deviceId, sourceDeviceName: deviceName }
+              ? { ...v, ...mergedRec, syncedAt: new Date().toISOString(), sourceDevice: deviceId, sourceDeviceName: deviceName }
               : v
           );
           status = 'force_updated';
@@ -75,7 +86,7 @@ app.post('/api/sync/push', (req, res) => {
             } else {
               data.visitors = data.visitors.map(v =>
                 v.id === rec.id
-                  ? { ...v, ...rec, syncedAt: new Date().toISOString() }
+                  ? { ...v, ...mergedRec, syncedAt: new Date().toISOString() }
                   : v
               );
               status = 'updated';
@@ -83,29 +94,18 @@ app.post('/api/sync/push', (req, res) => {
           } else {
             data.visitors = data.visitors.map(v =>
               v.id === rec.id
-                ? { ...v, ...rec, syncedAt: new Date().toISOString() }
+                ? { ...v, ...mergedRec, syncedAt: new Date().toISOString() }
                 : v
             );
             status = 'updated';
           }
         }
       } else {
-        const overlap = data.visitors.some(v =>
-          v.name === rec.name &&
-          v.idTail === rec.idTail &&
-          v.status !== 'rejected' &&
-          v.status !== 'revoked' &&
-          v.status !== 'expired' &&
-          hasOverlap(
-            new Date(rec.validStart).getTime(),
-            new Date(rec.validEnd).getTime(),
-            new Date(v.validStart).getTime(),
-            new Date(v.validEnd).getTime()
-          )
-        );
-
-        if (overlap && !forceOverwrite) {
-          const conflictingRecord = data.visitors.find(v =>
+        if (!isValidTimeRange(rec.validStart, rec.validEnd)) {
+          status = 'invalid_time';
+          conflict = { reason: '结束时间必须晚于开始时间' };
+        } else {
+          const overlap = data.visitors.some(v =>
             v.name === rec.name &&
             v.idTail === rec.idTail &&
             v.status !== 'rejected' &&
@@ -118,18 +118,36 @@ app.post('/api/sync/push', (req, res) => {
               new Date(v.validEnd).getTime()
             )
           );
-          status = 'overlap_conflict';
-          conflict = { reason: '同一访客同一时段已存在登记', server: conflictingRecord };
-        } else {
-          const toSave = {
-            ...rec,
-            id: rec.id || generateId(),
-            syncedAt: new Date().toISOString(),
-            sourceDevice: deviceId,
-            sourceDeviceName: deviceName
-          };
-          data.visitors.push(toSave);
-          status = 'created';
+
+          if (overlap && !forceOverwrite) {
+            const conflictingRecord = data.visitors.find(v =>
+              v.name === rec.name &&
+              v.idTail === rec.idTail &&
+              v.status !== 'rejected' &&
+              v.status !== 'revoked' &&
+              v.status !== 'expired' &&
+              hasOverlap(
+                new Date(rec.validStart).getTime(),
+                new Date(rec.validEnd).getTime(),
+                new Date(v.validStart).getTime(),
+                new Date(v.validEnd).getTime()
+              )
+            );
+            status = 'overlap_conflict';
+            conflict = { reason: '同一访客同一时段已存在登记', server: conflictingRecord };
+          } else {
+            const finalStatus = rec.status === 'pending_sync' ? 'pending_approval' : rec.status;
+            const toSave = {
+              ...rec,
+              id: rec.id || generateId(),
+              status: finalStatus,
+              syncedAt: new Date().toISOString(),
+              sourceDevice: deviceId,
+              sourceDeviceName: deviceName
+            };
+            data.visitors.push(toSave);
+            status = 'created';
+          }
         }
       }
 
@@ -189,21 +207,26 @@ app.patch('/api/visitors/:id', (req, res) => {
     const idx = data.visitors.findIndex(x => x.id === req.params.id);
     if (idx < 0) return res.status(404).json({ ok: false, error: 'not found' });
 
+    const rec = data.visitors[idx];
+
     if (status && ['approved', 'rejected'].includes(status)) {
       if (approverRole === 'guard') {
         return res.status(403).json({ ok: false, error: '保安无审批权限' });
       }
+      if (!isValidTimeRange(rec.validStart, rec.validEnd)) {
+        return res.status(400).json({ ok: false, error: '时段无效，无法审批' });
+      }
     }
 
     if (status === 'revoked') {
-      const currentStatus = data.visitors[idx].status;
+      const currentStatus = rec.status;
       if (approverRole === 'guard' && currentStatus !== 'pending_sync') {
         return res.status(403).json({ ok: false, error: '保安只能撤销待同步记录' });
       }
     }
 
     data.visitors[idx] = {
-      ...data.visitors[idx],
+      ...rec,
       ...(status ? { status } : {}),
       ...(approver ? { approver } : {}),
       ...(approverRole ? { approverRole } : {}),

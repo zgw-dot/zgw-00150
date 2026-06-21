@@ -153,7 +153,7 @@
       var newQueue = [];
 
       results.forEach(function (r) {
-        if (r.status === 'conflict' || r.status === 'overlap_conflict') {
+        if (r.status === 'conflict' || r.status === 'overlap_conflict' || r.status === 'invalid_time') {
           newConflicts.push({
             id: r.id,
             type: r.status,
@@ -499,7 +499,10 @@
     conflicts.forEach(function (c) {
       html += '<div class="card">';
       html += '<div class="card-header"><span class="card-title">冲突 #' + c.id.slice(0, 12) + '</span>';
-      html += '<span class="status-badge status-rejected">' + (c.type === 'overlap_conflict' ? '时段重叠' : '数据冲突') + '</span></div>';
+      var typeLabel = '数据冲突';
+      if (c.type === 'overlap_conflict') typeLabel = '时段重叠';
+      else if (c.type === 'invalid_time') typeLabel = '时段无效';
+      html += '<span class="status-badge status-rejected">' + typeLabel + '</span></div>';
 
       if (c.reason) {
         html += '<div class="card-body"><p><strong>' + escapeHtml(c.reason) + '</strong></p></div>';
