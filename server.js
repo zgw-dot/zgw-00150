@@ -10,20 +10,40 @@ const DATA_FILE = path.join(__dirname, 'data', 'visitors.json');
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+const STATUS_MAP = {
+  pending_sync: '待同步',
+  pending_approval: '待审批',
+  pending_manual: '待人工处理',
+  approved: '已放行',
+  rejected: '已拒绝',
+  revoked: '已撤销',
+  expired: '已过期'
+};
+
 function ensureDataDir() {
   const dir = path.dirname(DATA_FILE);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
   if (!fs.existsSync(DATA_FILE)) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify({ visitors: [], syncLog: [] }, null, 2));
+    fs.writeFileSync(DATA_FILE, JSON.stringify({
+      visitors: [],
+      syncLog: [],
+      auditLog: [],
+      pendingQueue: []
+    }, null, 2));
   }
 }
 
 function readData() {
   ensureDataDir();
   const raw = fs.readFileSync(DATA_FILE, 'utf-8');
-  return JSON.parse(raw || '{"visitors":[],"syncLog":[]}');
+  const data = JSON.parse(raw || '{}');
+  if (!data.visitors) data.visitors = [];
+  if (!data.syncLog) data.syncLog = [];
+  if (!data.auditLog) data.auditLog = [];
+  if (!data.pendingQueue) data.pendingQueue = [];
+  return data;
 }
 
 function writeData(data) {
@@ -31,8 +51,8 @@ function writeData(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
-function generateId() {
-  return 'v_' + Date.now().toString(36) + '_' + crypto.randomBytes(4).toString('hex');
+function generateId(prefix) {
+  return (prefix || 'id_') + Date.now().toString(36) + '_' + crypto.randomBytes(4).toString('hex');
 }
 
 function hasOverlap(aStart, aEnd, bStart, bEnd) {
@@ -44,20 +64,87 @@ function isValidTimeRange(validStart, validEnd) {
   return new Date(validEnd).getTime() > new Date(validStart).getTime();
 }
 
+function addAuditLog(data, entry) {
+  data.auditLog.push({
+    id: generateId('audit_'),
+    time: new Date().toISOString(),
+    ...entry
+  });
+}
+
+function addToPendingQueue(data, record, opts) {
+  const now = new Date().toISOString();
+  const pendingItem = {
+    id: record.id,
+    recordId: record.id,
+    recordSnapshot: JSON.parse(JSON.stringify(record)),
+    conflictType: opts.conflictType || 'unknown',
+    conflictReason: opts.conflictReason || '',
+    conflictDetail: opts.conflictDetail || null,
+    sourceDevice: record.sourceDevice || record.deviceId || '',
+    sourceDeviceName: record.sourceDeviceName || record.deviceName || '',
+    currentHandler: opts.currentHandler || '',
+    handlerNote: '',
+    processingHistory: opts.processingHistory || [],
+    status: 'pending',
+    lastSyncedAt: record.syncedAt || now,
+    createdAt: now,
+    updatedAt: now
+  };
+  const existingIdx = data.pendingQueue.findIndex(p => p.recordId === record.id);
+  if (existingIdx >= 0) {
+    data.pendingQueue[existingIdx] = { ...data.pendingQueue[existingIdx], ...pendingItem, updatedAt: now };
+  } else {
+    data.pendingQueue.push(pendingItem);
+  }
+}
+
+function removeFromPendingQueue(data, recordId) {
+  data.pendingQueue = data.pendingQueue.filter(p => p.recordId !== recordId);
+}
+
+function findDuplicateOverlap(data, rec, excludeId) {
+  return data.visitors.find(v => {
+    if (v.id === excludeId) return false;
+    if (['rejected', 'revoked', 'expired'].includes(v.status)) return false;
+    return v.name === rec.name &&
+      v.idTail === rec.idTail &&
+      hasOverlap(
+        new Date(rec.validStart).getTime(),
+        new Date(rec.validEnd).getTime(),
+        new Date(v.validStart).getTime(),
+        new Date(v.validEnd).getTime()
+      );
+  });
+}
+
+function diffRecords(oldR, newR) {
+  const changed = [];
+  const fields = ['name', 'idTail', 'department', 'escort', 'entrance', 'validStart', 'validEnd', 'approver', 'approverRole', 'status'];
+  fields.forEach(f => {
+    if ((oldR[f] || '') !== (newR[f] || '')) {
+      changed.push({ field: f, old: oldR[f], new: newR[f] });
+    }
+  });
+  return changed;
+}
+
 app.get('/api/health', (req, res) => {
   res.json({ ok: true, time: new Date().toISOString() });
 });
 
 app.post('/api/sync/push', (req, res) => {
   try {
-    const { records, deviceId, deviceName, forceOverwrite } = req.body;
+    const { records, deviceId, deviceName, forceOverwrite, operator, operatorRole } = req.body;
     const data = readData();
     const results = [];
+    const now = new Date().toISOString();
 
     for (const rec of records) {
       let status = 'merged';
       let conflict = null;
       const existing = data.visitors.find(v => v.id === rec.id);
+      const operatorName = operator || deviceName;
 
       if (existing) {
         const newStatus = rec.status === 'pending_sync' ? 'pending_approval' : rec.status;
@@ -66,94 +153,204 @@ app.post('/api/sync/push', (req, res) => {
         if (!isValidTimeRange(rec.validStart, rec.validEnd)) {
           status = 'invalid_time';
           conflict = { reason: '结束时间必须晚于开始时间' };
+          existing.status = 'pending_manual';
+          existing.syncedAt = now;
+          addToPendingQueue(data, existing, {
+            conflictType: 'invalid_time',
+            conflictReason: '结束时间必须晚于开始时间',
+            currentHandler: ''
+          });
+          addAuditLog(data, {
+            action: 'sync_invalid_time',
+            recordId: rec.id,
+            operator: operatorName,
+            operatorRole: operatorRole || 'guard',
+            detail: { deviceId, deviceName },
+            note: '时段无效，转入待人工处理'
+          });
         } else if (forceOverwrite) {
           data.visitors = data.visitors.map(v =>
             v.id === rec.id
-              ? { ...v, ...mergedRec, syncedAt: new Date().toISOString(), sourceDevice: deviceId, sourceDeviceName: deviceName }
+              ? { ...v, ...mergedRec, syncedAt: now, sourceDevice: deviceId, sourceDeviceName: deviceName }
               : v
           );
+          removeFromPendingQueue(data, rec.id);
+          addAuditLog(data, {
+            action: 'sync_force_overwrite',
+            recordId: rec.id,
+            operator: operatorName,
+            operatorRole: operatorRole || 'guard',
+            detail: { deviceId, deviceName },
+            note: '强制覆盖同步'
+          });
           status = 'force_updated';
         } else {
           const serverUpdated = new Date(existing.updatedAt || existing.createdAt).getTime();
           const clientUpdated = new Date(rec.updatedAt || rec.createdAt).getTime();
+          const fieldChanges = diffRecords(existing, mergedRec);
+          const hasStatusChange = existing.status !== (newStatus);
+          const hasApproverChange = (existing.approver || '') !== (rec.approver || '');
+          const hasFieldChanges = fieldChanges.some(c => ['name', 'idTail', 'department', 'escort', 'entrance', 'validStart', 'validEnd'].includes(c.field));
 
-          if (existing.status !== rec.status || existing.approver !== rec.approver || existing.rejectNote !== rec.rejectNote) {
-            if (serverUpdated > clientUpdated && existing.status !== 'pending_sync' && rec.status === 'pending_sync') {
-              status = 'server_wins';
-            } else if (serverUpdated !== clientUpdated) {
-              status = 'conflict';
-              conflict = { server: existing, client: rec };
-            } else {
-              data.visitors = data.visitors.map(v =>
-                v.id === rec.id
-                  ? { ...v, ...mergedRec, syncedAt: new Date().toISOString() }
-                  : v
-              );
-              status = 'updated';
-            }
+          let shouldManual = false;
+          let conflictType = '';
+          let conflictReason = '';
+          let conflictDetail = {};
+
+          if (hasStatusChange && existing.status !== 'pending_sync') {
+            shouldManual = true;
+            conflictType = 'status_change';
+            conflictReason = `状态变更：${STATUS_MAP[existing.status]} → ${STATUS_MAP[newStatus]}`;
+            conflictDetail = { oldStatus: existing.status, newStatus };
+          } else if (hasApproverChange && existing.approver) {
+            shouldManual = true;
+            conflictType = 'approver_change';
+            conflictReason = `审批人变更：${existing.approver} → ${rec.approver || '（空）'}`;
+            conflictDetail = { oldApprover: existing.approver, newApprover: rec.approver };
+          } else if (hasFieldChanges && existing.status !== 'pending_sync') {
+            shouldManual = true;
+            conflictType = 'data_update';
+            conflictReason = '资料补录或修改，需人工复核';
+            conflictDetail = { changes: fieldChanges };
+          }
+
+          if (shouldManual) {
+            status = 'pending_manual';
+            conflict = {
+              reason: conflictReason,
+              type: conflictType,
+              detail: conflictDetail,
+              server: existing,
+              client: rec
+            };
+            const pendingRec = { ...existing, ...mergedRec, status: 'pending_manual' };
+            data.visitors = data.visitors.map(v =>
+              v.id === rec.id ? { ...v, ...pendingRec, syncedAt: now } : v
+            );
+            addToPendingQueue(data, pendingRec, {
+              conflictType,
+              conflictReason,
+              conflictDetail,
+              sourceDevice: deviceId,
+              sourceDeviceName: deviceName,
+              processingHistory: [{ time: now, action: 'sync_conflict', detail: conflictReason, by: operatorName }]
+            });
+            addAuditLog(data, {
+              action: 'sync_to_manual',
+              recordId: rec.id,
+              operator: operatorName,
+              operatorRole: operatorRole || 'guard',
+              detail: { conflictType, conflictReason, conflictDetail },
+              note: '同步检测到变更，转入待人工处理'
+            });
+          } else if (serverUpdated > clientUpdated && existing.status !== 'pending_sync' && rec.status === 'pending_sync') {
+            status = 'server_wins';
           } else {
             data.visitors = data.visitors.map(v =>
               v.id === rec.id
-                ? { ...v, ...mergedRec, syncedAt: new Date().toISOString() }
+                ? { ...v, ...mergedRec, syncedAt: now }
                 : v
             );
             status = 'updated';
+            addAuditLog(data, {
+              action: 'sync_update',
+              recordId: rec.id,
+              operator: operatorName,
+              operatorRole: operatorRole || 'guard',
+              detail: { deviceId, deviceName },
+              note: '同步更新记录'
+            });
           }
         }
       } else {
         if (!isValidTimeRange(rec.validStart, rec.validEnd)) {
           status = 'invalid_time';
           conflict = { reason: '结束时间必须晚于开始时间' };
+          const invalidRec = {
+            ...rec,
+            id: rec.id || generateId('v_'),
+            status: 'pending_manual',
+            syncedAt: now,
+            sourceDevice: deviceId,
+            sourceDeviceName: deviceName,
+            createdAt: now,
+            updatedAt: now
+          };
+          data.visitors.push(invalidRec);
+          addToPendingQueue(data, invalidRec, {
+            conflictType: 'invalid_time',
+            conflictReason: '结束时间必须晚于开始时间',
+            sourceDevice: deviceId,
+            sourceDeviceName: deviceName
+          });
+          addAuditLog(data, {
+            action: 'sync_invalid_new',
+            recordId: invalidRec.id,
+            operator: operator || deviceName,
+            operatorRole: operatorRole || 'guard',
+            detail: { deviceId, deviceName },
+            note: '新记录时段无效，转入待人工处理'
+          });
         } else {
-          const overlap = data.visitors.some(v =>
-            v.name === rec.name &&
-            v.idTail === rec.idTail &&
-            v.status !== 'rejected' &&
-            v.status !== 'revoked' &&
-            v.status !== 'expired' &&
-            hasOverlap(
-              new Date(rec.validStart).getTime(),
-              new Date(rec.validEnd).getTime(),
-              new Date(v.validStart).getTime(),
-              new Date(v.validEnd).getTime()
-            )
-          );
-
+          const overlap = findDuplicateOverlap(data, rec);
           if (overlap && !forceOverwrite) {
-            const conflictingRecord = data.visitors.find(v =>
-              v.name === rec.name &&
-              v.idTail === rec.idTail &&
-              v.status !== 'rejected' &&
-              v.status !== 'revoked' &&
-              v.status !== 'expired' &&
-              hasOverlap(
-                new Date(rec.validStart).getTime(),
-                new Date(rec.validEnd).getTime(),
-                new Date(v.validStart).getTime(),
-                new Date(v.validEnd).getTime()
-              )
-            );
             status = 'overlap_conflict';
-            conflict = { reason: '同一访客同一时段已存在登记', server: conflictingRecord };
+            conflict = { reason: '同一访客同一时段已存在登记', server: overlap };
+            const pendingRec = {
+              ...rec,
+              id: rec.id || generateId('v_'),
+              status: 'pending_manual',
+              syncedAt: now,
+              sourceDevice: deviceId,
+              sourceDeviceName: deviceName,
+              createdAt: now,
+              updatedAt: now
+            };
+            data.visitors.push(pendingRec);
+            addToPendingQueue(data, pendingRec, {
+              conflictType: 'overlap_conflict',
+              conflictReason: '同一访客同一时段已存在登记',
+              conflictDetail: { existingRecordId: overlap.id },
+              sourceDevice: deviceId,
+              sourceDeviceName: deviceName
+            });
+            addAuditLog(data, {
+              action: 'sync_overlap_new',
+              recordId: pendingRec.id,
+              operator: operator || deviceName,
+              operatorRole: operatorRole || 'guard',
+              detail: { deviceId, deviceName, existingRecordId: overlap.id },
+              note: '新记录与现有记录时段重叠，转入待人工处理'
+            });
           } else {
             const finalStatus = rec.status === 'pending_sync' ? 'pending_approval' : rec.status;
             const toSave = {
               ...rec,
-              id: rec.id || generateId(),
+              id: rec.id || generateId('v_'),
               status: finalStatus,
-              syncedAt: new Date().toISOString(),
+              syncedAt: now,
               sourceDevice: deviceId,
-              sourceDeviceName: deviceName
+              sourceDeviceName: deviceName,
+              createdAt: now,
+              updatedAt: now
             };
             data.visitors.push(toSave);
             status = 'created';
+            addAuditLog(data, {
+              action: 'sync_create',
+              recordId: toSave.id,
+              operator: operator || deviceName,
+              operatorRole: operatorRole || 'guard',
+              detail: { deviceId, deviceName },
+              note: '新建访客登记'
+            });
           }
         }
       }
 
       results.push({ id: rec.id, status, conflict });
       data.syncLog.push({
-        time: new Date().toISOString(),
+        time: now,
         deviceId,
         deviceName,
         recordId: rec.id,
@@ -186,10 +383,13 @@ app.post('/api/sync/pull', (req, res) => {
 
 app.get('/api/visitors', (req, res) => {
   const data = readData();
-  const { department, status } = req.query;
+  const { department, status, id, name } = req.query;
   let list = data.visitors;
   if (department) list = list.filter(v => v.department === department);
   if (status) list = list.filter(v => v.status === status);
+  if (id) list = list.filter(v => v.id === id || (v.idTail && v.idTail.includes(id)));
+  if (name) list = list.filter(v => v.name && v.name.includes(name));
+  list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   res.json({ ok: true, records: list });
 });
 
@@ -197,43 +397,100 @@ app.get('/api/visitors/:id', (req, res) => {
   const data = readData();
   const v = data.visitors.find(x => x.id === req.params.id);
   if (!v) return res.status(404).json({ ok: false, error: 'not found' });
-  res.json({ ok: true, record: v });
+  const pending = data.pendingQueue.find(p => p.recordId === v.id);
+  res.json({ ok: true, record: v, pending: pending || null });
 });
 
 app.patch('/api/visitors/:id', (req, res) => {
   try {
-    const { status, approver, approverRole, note } = req.body;
+    const { status, approver, approverRole, note, operator } = req.body;
     const data = readData();
     const idx = data.visitors.findIndex(x => x.id === req.params.id);
     if (idx < 0) return res.status(404).json({ ok: false, error: 'not found' });
 
     const rec = data.visitors[idx];
+    const operatorName = operator || approver || 'system';
 
     if (status && ['approved', 'rejected'].includes(status)) {
       if (approverRole === 'guard') {
+        addAuditLog(data, {
+          action: 'permission_denied',
+          recordId: req.params.id,
+          operator: operatorName,
+          operatorRole: 'guard',
+          detail: { attemptedAction: status },
+          note: '保安尝试审批被拒'
+        });
+        writeData(data);
         return res.status(403).json({ ok: false, error: '保安无审批权限' });
       }
-      if (!isValidTimeRange(rec.validStart, rec.validEnd)) {
-        return res.status(400).json({ ok: false, error: '时段无效，无法审批' });
+      if (rec.status === 'pending_manual') {
+        addAuditLog(data, {
+          action: 'permission_denied',
+          recordId: req.params.id,
+          operator: operatorName,
+          operatorRole: approverRole || 'unknown',
+          detail: { attemptedAction: status },
+          note: '尝试审批待人工处理记录被拒'
+        });
+        writeData(data);
+        return res.status(400).json({ ok: false, error: '该记录需先完成人工处理' });
+      }
+      if (!isValidTimeRange(rec.validStart, rec.validEnd) && status === 'approved') {
+        addAuditLog(data, {
+          action: 'invalid_approve',
+          recordId: req.params.id,
+          operator: operatorName,
+          operatorRole: approverRole || 'approver',
+          note: '时段无效无法放行'
+        });
+        writeData(data);
+        return res.status(400).json({ ok: false, error: '时段无效，无法放行' });
       }
     }
 
     if (status === 'revoked') {
       const currentStatus = rec.status;
       if (approverRole === 'guard' && currentStatus !== 'pending_sync') {
+        addAuditLog(data, {
+          action: 'permission_denied',
+          recordId: req.params.id,
+          operator: operatorName,
+          operatorRole: 'guard',
+          detail: { currentStatus, attemptedAction: 'revoke' },
+          note: '保安越权撤销被拒'
+        });
+        writeData(data);
         return res.status(403).json({ ok: false, error: '保安只能撤销待同步记录' });
       }
     }
 
+    const oldStatus = rec.status;
     data.visitors[idx] = {
       ...rec,
       ...(status ? { status } : {}),
       ...(approver ? { approver } : {}),
       ...(approverRole ? { approverRole } : {}),
-      ...(note ? { rejectNote: note } : {}),
+      ...(note && status === 'rejected' ? { rejectNote: note } : {}),
       updatedAt: new Date().toISOString(),
       syncedAt: new Date().toISOString()
     };
+
+    if (status === 'approved' || status === 'rejected') {
+      removeFromPendingQueue(data, req.params.id);
+    }
+
+    if (status) {
+      addAuditLog(data, {
+        action: status,
+        recordId: req.params.id,
+        operator: operatorName,
+        operatorRole: approverRole || (status === 'revoked' ? 'guard' : 'approver'),
+        detail: { oldStatus, newStatus: status },
+        note: note || ''
+      });
+    }
+
     writeData(data);
     res.json({ ok: true, record: data.visitors[idx] });
   } catch (e) {
@@ -242,17 +499,237 @@ app.patch('/api/visitors/:id', (req, res) => {
   }
 });
 
-app.get('/api/export', (req, res) => {
+app.get('/api/pending', (req, res) => {
   const data = readData();
-  const { format = 'json' } = req.query;
-  const records = data.visitors;
+  const { status, sourceDevice } = req.query;
+  let list = data.pendingQueue;
+  if (status) list = list.filter(p => p.status === status);
+  if (sourceDevice) list = list.filter(p => p.sourceDevice === sourceDevice);
+  list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const enriched = list.map(p => {
+    const record = data.visitors.find(v => v.id === p.recordId);
+    return { ...p, currentRecord: record || null };
+  });
+  res.json({ ok: true, pending: enriched });
+});
+
+app.post('/api/pending/:recordId/resolve', (req, res) => {
+  try {
+    const { action, handler, handlerRole, note, resolutionData } = req.body;
+    const data = readData();
+    const now = new Date().toISOString();
+    const pIdx = data.pendingQueue.findIndex(p => p.recordId === req.params.recordId);
+    if (pIdx < 0) return res.status(404).json({ ok: false, error: '待处理记录不存在' });
+
+    const pending = data.pendingQueue[pIdx];
+    const rIdx = data.visitors.findIndex(v => v.id === req.params.recordId);
+    if (rIdx < 0) return res.status(404).json({ ok: false, error: '访客记录不存在' });
+
+    const record = data.visitors[rIdx];
+    const historyEntry = {
+      time: now,
+      action,
+      detail: note || '',
+      by: handler || 'system'
+    };
+    pending.processingHistory = pending.processingHistory || [];
+    pending.processingHistory.push(historyEntry);
+    pending.updatedAt = now;
+    pending.currentHandler = handler || '';
+    pending.handlerNote = (pending.handlerNote || '') + (note ? (pending.handlerNote ? '\n' : '') + note : '');
+
+    if (action === 'approve_manual') {
+      if (!isValidTimeRange(record.validStart, record.validEnd)) {
+        return res.status(400).json({ ok: false, error: '时段无效，无法放行' });
+      }
+      if (handlerRole !== 'approver') {
+        return res.status(403).json({ ok: false, error: '仅审批人可放行' });
+      }
+      record.status = 'approved';
+      record.approver = handler;
+      record.approverRole = 'approver';
+      record.updatedAt = now;
+      record.syncedAt = now;
+      data.visitors[rIdx] = record;
+      removeFromPendingQueue(data, req.params.recordId);
+      addAuditLog(data, {
+        action: 'approved',
+        recordId: req.params.recordId,
+        operator: handler,
+        operatorRole: 'approver',
+        detail: { source: 'manual_resolution' },
+        note: note || '人工处理后放行'
+      });
+    } else if (action === 'reject_manual') {
+      if (handlerRole !== 'approver') {
+        return res.status(403).json({ ok: false, error: '仅审批人可驳回' });
+      }
+      record.status = 'rejected';
+      record.approver = handler;
+      record.approverRole = 'approver';
+      record.rejectNote = note || record.rejectNote || '';
+      record.updatedAt = now;
+      record.syncedAt = now;
+      data.visitors[rIdx] = record;
+      removeFromPendingQueue(data, req.params.recordId);
+      addAuditLog(data, {
+        action: 'rejected',
+        recordId: req.params.recordId,
+        operator: handler,
+        operatorRole: 'approver',
+        detail: { source: 'manual_resolution' },
+        note: note || '人工处理后驳回'
+      });
+    } else if (action === 'edit_and_resubmit') {
+      if (resolutionData) {
+        Object.assign(record, resolutionData);
+      }
+      record.status = 'pending_approval';
+      record.updatedAt = now;
+      record.syncedAt = now;
+      data.visitors[rIdx] = record;
+      pending.conflictType = 'resubmitted';
+      pending.conflictReason = (pending.conflictReason || '') + '\n[重新提交] ' + (note || '');
+      addAuditLog(data, {
+        action: 'manual_resubmit',
+        recordId: req.params.recordId,
+        operator: handler,
+        operatorRole: handlerRole || 'guard',
+        detail: { resolutionData: resolutionData || null },
+        note: note || '资料修改后重新提交'
+      });
+      data.pendingQueue[pIdx] = pending;
+    } else if (action === 'mark_duplicate') {
+      record.status = 'rejected';
+      record.rejectNote = (note || '重复登记已标记') + '（重复登记）';
+      record.updatedAt = now;
+      record.syncedAt = now;
+      data.visitors[rIdx] = record;
+      removeFromPendingQueue(data, req.params.recordId);
+      addAuditLog(data, {
+        action: 'mark_duplicate',
+        recordId: req.params.recordId,
+        operator: handler,
+        operatorRole: handlerRole || 'approver',
+        detail: resolutionData || {},
+        note: note || '标记为重复登记并驳回'
+      });
+    } else if (action === 'claim') {
+      pending.status = 'processing';
+      pending.currentHandler = handler;
+      data.pendingQueue[pIdx] = pending;
+      addAuditLog(data, {
+        action: 'pending_claim',
+        recordId: req.params.recordId,
+        operator: handler,
+        operatorRole: handlerRole || 'guard',
+        note: note || '认领待处理任务'
+      });
+    } else if (action === 'release') {
+      pending.status = 'pending';
+      pending.currentHandler = '';
+      data.pendingQueue[pIdx] = pending;
+      addAuditLog(data, {
+        action: 'pending_release',
+        recordId: req.params.recordId,
+        operator: handler,
+        operatorRole: handlerRole || 'guard',
+        note: note || '释放待处理任务'
+      });
+    } else {
+      data.pendingQueue[pIdx] = pending;
+      addAuditLog(data, {
+        action: 'pending_update',
+        recordId: req.params.recordId,
+        operator: handler,
+        operatorRole: handlerRole || 'guard',
+        detail: { action },
+        note: note || '更新待处理记录'
+      });
+    }
+
+    writeData(data);
+    const updatedPending = data.pendingQueue.find(p => p.recordId === req.params.recordId);
+    res.json({
+      ok: true,
+      record: data.visitors[rIdx],
+      pending: updatedPending || null
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/audit', (req, res) => {
+  const data = readData();
+  const { recordId, action, operator, since, until, format } = req.query;
+  let list = data.auditLog.slice();
+  list.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+
+  if (recordId) list = list.filter(a => a.recordId === recordId);
+  if (action) list = list.filter(a => a.action === action);
+  if (operator) list = list.filter(a => a.operator && a.operator.includes(operator));
+  if (since) list = list.filter(a => new Date(a.time) >= new Date(since));
+  if (until) list = list.filter(a => new Date(a.time) <= new Date(until));
 
   if (format === 'csv') {
-    const headers = ['id', 'name', 'idTail', 'department', 'escort', 'entrance', 'validStart', 'validEnd', 'status', 'approver', 'rejectNote', 'createdAt', 'updatedAt', 'sourceDevice', 'sourceDeviceName'];
+    const headers = ['id', 'time', 'action', 'recordId', 'operator', 'operatorRole', 'note', 'detail'];
+    const csv = [headers.join(',')].concat(
+      list.map(r => headers.map(h => {
+        let v;
+        if (h === 'detail') {
+          v = r.detail ? JSON.stringify(r.detail) : '';
+        } else {
+          v = r[h] || '';
+        }
+        v = String(v);
+        if (v.includes(',') || v.includes('"') || v.includes('\n')) {
+          v = '"' + v.replace(/"/g, '""') + '"';
+        }
+        return v;
+      }).join(','))
+    ).join('\n');
+    res.header('Content-Type', 'text/csv; charset=utf-8');
+    res.header('Content-Disposition', 'attachment; filename="audit_log.csv"');
+    res.send('\uFEFF' + csv);
+    return;
+  }
+
+  if (format === 'json') {
+    res.header('Content-Type', 'application/json');
+    res.header('Content-Disposition', 'attachment; filename="audit_log.json"');
+    res.json({ exportedAt: new Date().toISOString(), count: list.length, records: list });
+    return;
+  }
+
+  res.json({ ok: true, count: list.length, records: list });
+});
+
+app.get('/api/export', (req, res) => {
+  const data = readData();
+  const { format = 'json', department, status } = req.query;
+  let records = data.visitors.slice();
+  if (department) records = records.filter(v => v.department === department);
+  if (status) records = records.filter(v => v.status === status);
+  records.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  if (format === 'csv') {
+    const headers = ['id', 'name', 'idTail', 'department', 'escort', 'entrance', 'validStart', 'validEnd', 'status', 'statusLabel', 'approver', 'approverRole', 'rejectNote', 'createdAt', 'updatedAt', 'syncedAt', 'sourceDevice', 'sourceDeviceName'];
     const csv = [headers.join(',')].concat(
       records.map(r => headers.map(h => {
-        let v = r[h] || '';
-        if (typeof v === 'string' && (v.includes(',') || v.includes('"') || v.includes('\n'))) {
+        let v;
+        if (h === 'statusLabel') {
+          v = STATUS_MAP[r.status] || r.status;
+        } else if (h === 'sourceDevice') {
+          v = r.sourceDevice || r.deviceId || '';
+        } else if (h === 'sourceDeviceName') {
+          v = r.sourceDeviceName || r.deviceName || '';
+        } else {
+          v = r[h] || '';
+        }
+        v = String(v);
+        if (v.includes(',') || v.includes('"') || v.includes('\n')) {
           v = '"' + v.replace(/"/g, '""') + '"';
         }
         return v;
@@ -264,7 +741,13 @@ app.get('/api/export', (req, res) => {
   } else {
     res.header('Content-Type', 'application/json');
     res.header('Content-Disposition', 'attachment; filename="visitors.json"');
-    res.json({ exportedAt: new Date().toISOString(), records });
+    const exported = records.map(r => ({
+      ...r,
+      statusLabel: STATUS_MAP[r.status] || r.status,
+      sourceDevice: r.sourceDevice || r.deviceId || '',
+      sourceDeviceName: r.sourceDeviceName || r.deviceName || ''
+    }));
+    res.json({ exportedAt: new Date().toISOString(), count: exported.length, records: exported });
   }
 });
 
@@ -273,6 +756,31 @@ app.get('/api/departments', (req, res) => {
   const depts = Array.from(new Set(data.visitors.map(v => v.department).filter(Boolean)));
   const defaults = ['校长办公室', '教务处', '学生处', '后勤处', '保卫处', '计算机学院', '文学院', '理学院', '工学院'];
   res.json({ ok: true, departments: Array.from(new Set([...defaults, ...depts])) });
+});
+
+app.get('/api/stats', (req, res) => {
+  const data = readData();
+  const now = Date.now();
+  const stats = {
+    total: data.visitors.length,
+    byStatus: {},
+    pendingCount: data.pendingQueue.length,
+    auditCount: data.auditLog.length,
+    todayCount: 0,
+    approvedToday: 0
+  };
+  Object.keys(STATUS_MAP).forEach(k => { stats.byStatus[k] = 0; });
+  data.visitors.forEach(v => {
+    stats.byStatus[v.status] = (stats.byStatus[v.status] || 0) + 1;
+    const created = new Date(v.createdAt).getTime();
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    if (created >= todayStart.getTime()) {
+      stats.todayCount++;
+      if (v.status === 'approved') stats.approvedToday++;
+    }
+  });
+  res.json({ ok: true, stats });
 });
 
 ensureDataDir();
