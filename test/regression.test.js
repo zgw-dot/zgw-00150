@@ -412,6 +412,108 @@ async function runAll() {
   let auditRevoke = await req('GET', '/api/audit');
   assert('撤销操作写入审计', auditRevoke.body.records.some(a => a.action === 'revoked' && a.recordId === revokeId));
 
+  // ---------- [新增] 版本哈希冲突检测接口 ----------
+  console.log('\n[11] 版本哈希与冲突检测接口');
+  let versions = await req('GET', '/api/visitors/versions');
+  assert('版本接口正常返回', versions.status === 200 && versions.body.ok);
+  assert('包含 visitors 版本数组', Array.isArray(versions.body.visitors));
+  assert('包含 pending 版本数组', Array.isArray(versions.body.pending));
+  assert('包含 serverTime 服务端时间戳', !!versions.body.serverTime);
+  assert('主链路记录有版本哈希', versions.body.visitors.some(v => v.id === mainId && !!v.hash && v.hash.length === 16));
+  assert('版本信息含 updatedAt/syncedAt/status',
+    versions.body.visitors.every(v => v.id && v.updatedAt && v.status));
+
+  // ---------- [新增] 权限边界：保安角色接口越权 ----------
+  console.log('\n[12] 权限边界：保安接口越权防护');
+  let guardAudit = await req('GET', '/api/audit?role=guard');
+  assert('保安访问审计接口返回 403', guardAudit.status === 403, `got=${guardAudit.status}`);
+  assert('403 返回含错误提示', guardAudit.body && guardAudit.body.error && guardAudit.body.error.includes('审批人'));
+
+  let guardAuditCSV = await req('GET', '/api/audit?format=csv&role=guard');
+  assert('保安导出审计 CSV 被拒（403）', guardAuditCSV.status === 403);
+
+  let guardAuditJSON = await req('GET', '/api/audit?format=json&role=guard');
+  assert('保安导出审计 JSON 被拒（403）', guardAuditJSON.status === 403);
+
+  let guardPendingExport = await req('GET', '/api/export/pending?format=json&role=guard');
+  assert('保安导出待处理队列被拒（403）', guardPendingExport.status === 403, `got=${guardPendingExport.status}`);
+
+  let guardRejectStatus = await req('GET', '/api/export?format=json&role=guard&status=rejected');
+  assert('保安导出 rejected 状态被拒（403）', guardRejectStatus.status === 403, `got=${guardRejectStatus.status}`);
+
+  let guardApproved = await req('GET', '/api/export?format=json&role=guard&status=approved');
+  assert('保安可以导出 approved 状态（200）', guardApproved.status === 200, `got=${guardApproved.status}`);
+
+  // ---------- [新增] 导出筛选与审批页面对齐 ----------
+  console.log('\n[13] 导出筛选与页面对齐：部门/状态');
+  let visitorDeptOnly = await req('GET', '/api/export?format=json&department=教务处');
+  assert('按部门导出结果匹配',
+    visitorDeptOnly.body.records.every(r => r.department === '教务处'));
+
+  let visitorStatusOnly = await req('GET', '/api/export?format=json&status=approved');
+  assert('按状态导出结果匹配',
+    visitorStatusOnly.body.records.every(r => r.status === 'approved'));
+
+  let visitorBoth = await req('GET', '/api/export?format=json&department=计算机学院&status=pending_approval');
+  assert('部门+状态同时筛选均匹配',
+    visitorBoth.body.records.every(r => r.department === '计算机学院' && r.status === 'pending_approval'),
+    `实际=${JSON.stringify(visitorBoth.body.records.map(r => ({d:r.department,s:r.status})))}`);
+
+  let auditByDept = await req('GET', '/api/audit?format=json&department=教务处&role=approver');
+  assert('审计按部门筛选返回 JSON 正常',
+    auditByDept.status === 200 && Array.isArray(auditByDept.body.records));
+
+  // CSV 同样带筛选
+  let visitorDeptCSV = await req('GET', '/api/export?format=csv&department=教务处');
+  assert('访客 CSV 按部门导出成功',
+    visitorDeptCSV.status === 200 && (visitorDeptCSV.headers['content-type'] || '').includes('text/csv'));
+
+  // ---------- [新增] 待处理队列导出 ----------
+  console.log('\n[14] 待处理中心导出接口（审批人权限）');
+  let pendingJSON = await req('GET', '/api/export/pending?format=json&role=approver');
+  assert('待处理 JSON 导出成功', pendingJSON.status === 200, `got=${pendingJSON.status}`);
+  assert('待处理 JSON 含 count/records/exportedAt',
+    typeof pendingJSON.body.count === 'number' && Array.isArray(pendingJSON.body.records));
+
+  if (pendingJSON.body.records.length > 0) {
+    const pr = pendingJSON.body.records[0];
+    assert('待处理记录含冲突类型标签', !!pr.conflictTypeLabel);
+    assert('待处理记录含访客姓名/部门', !!pr.recordName && !!pr.recordDepartment);
+    assert('待处理记录含来源设备/处理人', 'sourceDeviceName' in pr && 'currentHandler' in pr);
+  }
+
+  let pendingCSV = await req('GET', '/api/export/pending?format=csv&role=approver');
+  assert('待处理 CSV 导出成功',
+    pendingCSV.status === 200 && (pendingCSV.headers['content-type'] || '').includes('text/csv'));
+
+  let pendingByType = await req('GET', '/api/export/pending?format=json&role=approver&conflictType=overlap_conflict');
+  assert('待处理按冲突类型导出筛选生效',
+    pendingByType.body.records.every(r => r.conflictType === 'overlap_conflict' || r.conflictType === undefined));
+
+  // ---------- [新增] /api/pending 接口扩展筛选 ----------
+  console.log('\n[15] 待处理列表接口扩展筛选');
+  let pendingWithDept = await req('GET', '/api/pending?department=学生处');
+  assert('待处理支持按部门筛选',
+    pendingWithDept.body.pending.every(p => !p.recordDepartment || p.recordDepartment === '学生处'));
+
+  let pendingByConflict = await req('GET', '/api/pending?conflictType=overlap_conflict');
+  assert('待处理支持按冲突类型筛选',
+    pendingByConflict.body.pending.every(p => p.conflictType === 'overlap_conflict'));
+
+  let pendingGuardView = await req('GET', '/api/pending?role=guard&deviceId=' + DEVICE_A);
+  assert('保安视角待处理只返回有权限条目',
+    pendingGuardView.body.pending.every(p =>
+      p.sourceDevice === DEVICE_A ||
+      ['overlap_conflict', 'invalid_time'].includes(p.conflictType)));
+
+  // ---------- [新增] 访客列表按角色隔离 ----------
+  console.log('\n[16] 访客列表按角色隔离');
+  let guardList = await req('GET', '/api/visitors?role=guard&deviceId=' + DEVICE_A);
+  assert('保安访问列表接口过滤有效',
+    guardList.body.records.every(r =>
+      ['pending_sync', 'pending_approval', 'approved'].includes(r.status) ||
+      r.sourceDevice === DEVICE_A));
+
   // ---------- Summary ----------
   console.log('\n==================== 测试结果 ====================');
   console.log(`  通过: ${passed}`);
@@ -420,6 +522,16 @@ async function runAll() {
     console.log('\n  失败详情:');
     failures.forEach((f, i) => console.log(`    ${i + 1}. ${f.name}${f.detail ? '  → ' + f.detail : ''}`));
   }
+  console.log('==================================================\n');
+  console.log('[浏览器回归验证步骤提示]');
+  console.log('  1) 启动服务后访问 http://localhost:3000');
+  console.log('  2) 选择审批人角色，进入审批页');
+  console.log('  3) 设置部门=计算机学院 + 状态=待审批，在任意待处理记录点击【人工处理】');
+  console.log('  4) 在备注框输入一段处理说明，等待出现「已自动保存到本地」提示');
+  console.log('  5) 手动执行浏览器刷新（F5 / Ctrl+R）');
+  console.log('  6) 验证：页面仍停留在审批人视角、筛选条件保留、弹窗询问是否继续处理、备注内容自动恢复');
+  console.log('  7) 进入导出页，确认「最近导出」卡片展示刚才的筛选条件');
+  console.log('  8) 重启服务（node server.js），再次刷新确认待处理、备注、筛选仍然恢复');
   console.log('==================================================\n');
 
   process.exit(failed > 0 ? 1 : 0);

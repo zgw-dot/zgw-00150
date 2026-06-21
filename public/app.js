@@ -9,6 +9,10 @@
   var AUDIT_KEY = 'cvp_audit';
   var LAST_SYNC_KEY = 'cvp_lastSync';
   var ROLE_KEY = 'cvp_role';
+  var CONTEXT_KEY = 'cvp_approval_context';
+  var HANDLER_NOTES_KEY = 'cvp_handler_notes';
+  var EXPORT_RESULT_KEY = 'cvp_last_export';
+  var VERSION_CACHE_KEY = 'cvp_versions';
   var DEPARTMENTS = [
     '校长办公室', '教务处', '学生处', '后勤处', '保卫处',
     '计算机学院', '文学院', '理学院', '工学院'
@@ -79,6 +83,44 @@
   function setLastSync(t) { localStorage.setItem(LAST_SYNC_KEY, t); }
   function getRole() { return localStorage.getItem(ROLE_KEY) || ''; }
   function setRole(r) { localStorage.setItem(ROLE_KEY, r); }
+
+  function getContext() { return loadJSON(CONTEXT_KEY, {}); }
+  function saveContext(ctx) {
+    var current = getContext();
+    saveJSON(CONTEXT_KEY, Object.assign({}, current, ctx, { savedAt: nowISO() }));
+  }
+  function clearContext() { localStorage.removeItem(CONTEXT_KEY); }
+
+  function getHandlerNotes() { return loadJSON(HANDLER_NOTES_KEY, {}); }
+  function saveHandlerNote(recordId, note) {
+    var notes = getHandlerNotes();
+    notes[recordId] = { note: note, updatedAt: nowISO(), by: deviceName };
+    saveJSON(HANDLER_NOTES_KEY, notes);
+  }
+  function getHandlerNote(recordId) {
+    var notes = getHandlerNotes();
+    return notes[recordId] ? notes[recordId].note : '';
+  }
+
+  function getExportResult() { return loadJSON(EXPORT_RESULT_KEY, null); }
+  function saveExportResult(result) {
+    saveJSON(EXPORT_RESULT_KEY, Object.assign({}, result, { exportedAt: nowISO() }));
+  }
+
+  function getLocalVersions() { return loadJSON(VERSION_CACHE_KEY, { visitors: [], pending: [] }); }
+  function saveLocalVersions(versions) { saveJSON(VERSION_CACHE_KEY, versions); }
+
+  function restoreContextFromCache() {
+    var ctx = getContext();
+    if (!ctx || !ctx.role) return false;
+    if (ctx.role !== getRole()) return false;
+    if (ctx.currentPage) currentPage = ctx.currentPage;
+    if (ctx.currentFilter !== undefined) currentFilter = ctx.currentFilter;
+    if (ctx.currentDeptFilter !== undefined) currentDeptFilter = ctx.currentDeptFilter;
+    if (ctx.currentStatusFilter !== undefined) currentStatusFilter = ctx.currentStatusFilter;
+    if (ctx.currentPendingStatusFilter !== undefined) currentPendingStatusFilter = ctx.currentPendingStatusFilter;
+    return true;
+  }
 
   function generateId() {
     return 'v_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
@@ -266,9 +308,105 @@
   }
 
   function fetchAuditFromServer() {
-    return fetchJSON('/api/audit', { method: 'GET' }).then(function (res) {
+    return fetchJSON('/api/audit?role=' + encodeURIComponent(getRole() || 'guard'), { method: 'GET' }).then(function (res) {
       if (res && res.ok) saveAudit(res.records || []);
     }).catch(function () {});
+  }
+
+  function fetchVersionsFromServer() {
+    return fetchJSON('/api/visitors/versions', { method: 'GET' }).then(function (res) {
+      if (res && res.ok) return res;
+      return null;
+    }).catch(function () { return null; });
+  }
+
+  function detectConflicts(serverVersions) {
+    if (!serverVersions) return { visitors: [], pending: [] };
+    var localRecords = getRecords();
+    var localMap = {};
+    localRecords.forEach(function (r) {
+      localMap[r.id] = {
+        status: r.status,
+        updatedAt: r.updatedAt || r.createdAt,
+        syncedAt: r.syncedAt,
+        approver: r.approver
+      };
+    });
+
+    var visitorConflicts = [];
+    (serverVersions.visitors || []).forEach(function (sv) {
+      var local = localMap[sv.id];
+      if (!local) return;
+      var localUpdated = new Date(local.updatedAt).getTime();
+      var serverUpdated = new Date(sv.updatedAt).getTime();
+      var serverNewer = serverUpdated > localUpdated;
+      var statusDiff = local.status !== sv.status;
+      if (statusDiff && serverNewer) {
+        visitorConflicts.push({
+          id: sv.id,
+          localStatus: local.status,
+          serverStatus: sv.status,
+          localUpdatedAt: local.updatedAt,
+          serverUpdatedAt: sv.updatedAt,
+          type: 'status_conflict'
+        });
+      } else if (serverNewer && sv.syncedAt && (!local.syncedAt || new Date(sv.syncedAt).getTime() > new Date(local.syncedAt).getTime())) {
+        visitorConflicts.push({
+          id: sv.id,
+          localStatus: local.status,
+          serverStatus: sv.status,
+          localUpdatedAt: local.updatedAt,
+          serverUpdatedAt: sv.updatedAt,
+          type: 'data_update'
+        });
+      }
+    });
+
+    var localPending = getPending();
+    var pendingMap = {};
+    localPending.forEach(function (p) {
+      pendingMap[p.recordId] = {
+        status: p.status,
+        currentHandler: p.currentHandler,
+        handlerNote: p.handlerNote
+      };
+    });
+
+    var pendingConflicts = [];
+    (serverVersions.pending || []).forEach(function (sp) {
+      var local = pendingMap[sp.recordId];
+      if (!local) return;
+      if (sp.currentHandler !== local.currentHandler && sp.currentHandler && sp.currentHandler !== deviceName) {
+        pendingConflicts.push({
+          recordId: sp.recordId,
+          localHandler: local.currentHandler,
+          serverHandler: sp.currentHandler,
+          type: 'handler_taken',
+          detail: '任务已被 ' + sp.currentHandler + ' 认领'
+        });
+      }
+    });
+
+    return { visitors: visitorConflicts, pending: pendingConflicts };
+  }
+
+  function showConflictAlert(conflicts) {
+    if (!conflicts || (conflicts.visitors.length === 0 && conflicts.pending.length === 0)) return;
+    var total = conflicts.visitors.length + conflicts.pending.length;
+    var msg = '检测到 ' + total + ' 项与服务器状态不一致：\n\n';
+    conflicts.visitors.slice(0, 3).forEach(function (c) {
+      msg += '• 记录 ' + c.id.slice(0, 10) + '... 状态变化：' +
+        (STATUS_MAP[c.localStatus] || c.localStatus) + ' → ' +
+        (STATUS_MAP[c.serverStatus] || c.serverStatus) + '\n';
+    });
+    conflicts.pending.slice(0, 3).forEach(function (c) {
+      msg += '• 待处理 ' + c.recordId.slice(0, 10) + '...：' + c.detail + '\n';
+    });
+    if (total > 6) msg += '\n... 及其他 ' + (total - 6) + ' 项';
+    msg += '\n\n建议：点击「确认」后将从服务器拉取最新数据，未提交的备注会保留在本地。';
+    if (confirm(msg)) {
+      pullSync();
+    }
   }
 
   function fullSync() {
@@ -276,10 +414,21 @@
       toast('当前离线，无法同步', 'error');
       return Promise.resolve();
     }
-    return pushSync().then(function () {
+    var pendingConflicts = null;
+    return fetchVersionsFromServer().then(function (v) {
+      if (v) {
+        pendingConflicts = detectConflicts(v);
+        saveLocalVersions({ visitors: v.visitors, pending: v.pending, serverTime: v.serverTime });
+      }
+      return pushSync();
+    }).then(function () {
       return pullSync();
     }).then(function () {
-      toast('同步完成', 'success');
+      if (pendingConflicts && (pendingConflicts.visitors.length > 0 || pendingConflicts.pending.length > 0)) {
+        showConflictAlert(pendingConflicts);
+      } else {
+        toast('同步完成', 'success');
+      }
       render();
     }).catch(function (e) {
       toast('同步失败: ' + e.message, 'error');
@@ -345,6 +494,20 @@
     var pending = getPending().find(function (p) { return p.recordId === rec.id; });
     var handlerTag = pending && pending.currentHandler ? ' <span class="handler-tag">处理人:' + escapeHtml(pending.currentHandler) + '</span>' : '';
 
+    var diagnosisHtml = '';
+    if (rec.status === 'pending_approval' || rec.status === 'pending_manual' || pending) {
+      var syncVal = rec.syncedAt || (pending && pending.lastSyncedAt);
+      var devVal = devName || (pending && pending.sourceDeviceName) || devId || '-';
+      var handlerVal = (pending && pending.currentHandler) || '-';
+      var conflictVal = pending && pending.conflictReason ? pending.conflictReason : (rec.status === 'pending_approval' ? '等待审批人确认' : '-');
+      diagnosisHtml = '<div class="diagnosis-grid">' +
+        '<div class="diag-item"><span class="diag-label">最近同步</span><span class="diag-value">' + (syncVal ? formatDT(syncVal) : '-') + '</span></div>' +
+        '<div class="diag-item"><span class="diag-label">来源设备</span><span class="diag-value">' + escapeHtml(devVal) + '</span></div>' +
+        '<div class="diag-item"><span class="diag-label">当前处理人</span><span class="diag-value">' + escapeHtml(handlerVal) + '</span></div>' +
+        '<div class="diag-item diag-full"><span class="diag-label">冲突原因</span><span class="diag-value reason-inline">' + escapeHtml(conflictVal) + '</span></div>' +
+        '</div>';
+    }
+
     var html = '<div class="card">' +
       '<div class="card-header">' +
       '<span class="card-title">' + escapeHtml(rec.name) + '</span>' +
@@ -357,7 +520,7 @@
       (rec.escort ? '<p><strong>陪同人：</strong>' + escapeHtml(rec.escort) + '</p>' : '') +
       '<p><strong>入口：</strong>' + escapeHtml(rec.entrance) + '</p>' +
       deviceTag + localDevice + handlerTag + syncTime +
-      (pending && pending.conflictReason ? '<p class="reason-text"><strong>冲突原因：</strong>' + escapeHtml(pending.conflictReason) + '</p>' : '') +
+      diagnosisHtml +
       (rec.rejectNote ? '<p><strong>拒绝原因：</strong>' + escapeHtml(rec.rejectNote) + '</p>' : '') +
       (rec.approver ? '<p><strong>审批人：</strong>' + escapeHtml(rec.approver) + '</p>' : '') +
       '</div>';
@@ -736,9 +899,29 @@
     var records = getRecords();
     var total = records.length;
     var lastSync = getLastSync();
+    var lastExport = getExportResult();
+
+    var lastExportHtml = '';
+    if (lastExport && lastExport.exportedAt) {
+      var diff = Date.now() - new Date(lastExport.exportedAt).getTime();
+      var label;
+      if (diff < 60000) label = '刚刚';
+      else if (diff < 3600000) label = Math.floor(diff / 60000) + ' 分钟前';
+      else label = formatDT(lastExport.exportedAt);
+      var kindLabel = lastExport.filters && lastExport.filters.kind ? (lastExport.filters.kind === 'audit' ? '审计' : lastExport.filters.kind === 'pending' ? '待处理' : '访客') : '';
+      var fmtLabel = lastExport.filters && lastExport.filters.format ? lastExport.filters.format.toUpperCase() : '';
+      var deptLabel = lastExport.filters && lastExport.filters.department ? '·部门:' + lastExport.filters.department : '';
+      var statusLabel = lastExport.filters && lastExport.filters.status ? '·状态:' + (STATUS_MAP[lastExport.filters.status] || lastExport.filters.status) : '';
+      lastExportHtml = '<div class="last-export-box">' +
+        '<div class="last-export-title">📦 最近导出 <span class="last-export-time">' + label + '</span></div>' +
+        '<div class="last-export-detail">' + kindLabel + ' ' + fmtLabel + ' ' + deptLabel + ' ' + statusLabel + '</div>' +
+        (lastExport.offlineCount ? '<div class="last-export-detail">共 ' + lastExport.offlineCount + ' 条（离线模式）</div>' : '') +
+        '</div>';
+    }
 
     return '<div class="content">' +
       '<div class="section-title">数据导出</div>' +
+      lastExportHtml +
       '<div class="stat-grid">' +
       '<div class="stat-card"><div class="stat-num">' + total + '</div><div class="stat-label">总记录</div></div>' +
       '<div class="stat-card"><div class="stat-num">' + getQueue().length + '</div><div class="stat-label">待同步</div></div>' +
@@ -746,13 +929,19 @@
       '<div class="stat-card"><div class="stat-num">' + getAudit().length + '</div><div class="stat-label">审计数</div></div>' +
       '</div>' +
       '<p style="font-size:13px;color:var(--gray-500);margin-bottom:14px;">上次同步: ' + (lastSync ? formatDT(lastSync) : '从未同步') + '</p>' +
-      '<div class="section-title">访客数据</div>' +
+      '<div class="section-title">访客数据（与审批页筛选对齐）</div>' +
       '<div class="tool-bar">' +
       '<button class="tool-btn" data-action="export-csv">📄 访客 CSV</button>' +
       '<button class="tool-btn" data-action="export-json">📋 访客 JSON</button>' +
       '</div>' +
       '<div class="divider"></div>' +
-      '<div class="section-title">审计日志</div>' +
+      '<div class="section-title">待处理中心（仅审批人可导出）</div>' +
+      '<div class="tool-bar">' +
+      '<button class="tool-btn" data-action="export-pending-csv">📄 待处理 CSV</button>' +
+      '<button class="tool-btn" data-action="export-pending-json">📋 待处理 JSON</button>' +
+      '</div>' +
+      '<div class="divider"></div>' +
+      '<div class="section-title">审计日志（仅审批人可导出）</div>' +
       '<div class="tool-bar">' +
       '<button class="tool-btn" data-action="export-audit-csv">📄 审计 CSV</button>' +
       '<button class="tool-btn" data-action="export-audit-json">📋 审计 JSON</button>' +
@@ -807,6 +996,17 @@
     checkExpiredRecords();
     var role = getRole();
     var app = document.getElementById('app');
+
+    if (role) {
+      saveContext({
+        role: role,
+        currentPage: currentPage,
+        currentFilter: currentFilter,
+        currentDeptFilter: currentDeptFilter,
+        currentStatusFilter: currentStatusFilter,
+        currentPendingStatusFilter: currentPendingStatusFilter
+      });
+    }
 
     var body = '';
     if (!role) {
@@ -891,17 +1091,19 @@
       claimBtn = '<button class="btn btn-secondary" disabled>处理中: ' + escapeHtml(p.currentHandler) + '</button>';
     }
 
+    var cachedNote = getHandlerNote(recordId);
+    var pendingNote = (p && p.handlerNote) ? p.handlerNote : '';
+    var combinedNote = cachedNote || pendingNote;
+
     var modal = document.createElement('div');
     modal.className = 'modal-backdrop';
     modal.innerHTML = '<div class="modal">' +
       '<div class="modal-title">' + escapeHtml(rec.name) + ' · ' + typeLabel + '</div>' +
-      '<div class="form-group">' +
-      '<label class="form-label">冲突原因</label>' +
-      '<div class="reason-box">' + escapeHtml((p && p.conflictReason) || '需人工复核处理') + '</div>' +
-      '</div>' +
-      '<div class="form-group">' +
-      '<label class="form-label">来源设备 / 最近同步</label>' +
-      '<div>' + escapeHtml((p && p.sourceDeviceName) || rec.sourceDeviceName || rec.deviceName || '-') + ' · ' + formatDT((p && p.lastSyncedAt) || rec.syncedAt) + '</div>' +
+      '<div class="diagnosis-grid" style="margin-bottom:12px;">' +
+      '<div class="diag-item"><span class="diag-label">最近同步</span><span class="diag-value">' + formatDT((p && p.lastSyncedAt) || rec.syncedAt) + '</span></div>' +
+      '<div class="diag-item"><span class="diag-label">来源设备</span><span class="diag-value">' + escapeHtml((p && p.sourceDeviceName) || rec.sourceDeviceName || rec.deviceName || '-') + '</span></div>' +
+      '<div class="diag-item"><span class="diag-label">当前处理人</span><span class="diag-value">' + escapeHtml((p && p.currentHandler) || '-') + '</span></div>' +
+      '<div class="diag-item diag-full"><span class="diag-label">冲突原因</span><span class="diag-value reason-inline">' + escapeHtml((p && p.conflictReason) || '需人工复核处理') + '</span></div>' +
       '</div>' +
       '<div class="divider"></div>' +
       '<div class="section-title" style="margin:0 0 10px;">编辑资料</div>' +
@@ -916,7 +1118,9 @@
       '<input class="form-input" type="datetime-local" id="m-end" value="' + toLocal(rec.validEnd) + '" />' +
       '</div></div>' +
       '<div class="form-group"><label class="form-label">处理备注<span class="req">*</span></label>' +
-      '<textarea class="form-textarea" id="m-note" rows="3" placeholder="请填写处理说明"></textarea></div>' +
+      '<textarea class="form-textarea" id="m-note" rows="3" placeholder="请填写处理说明">' + escapeHtml(combinedNote || '') + '</textarea>' +
+      '<div class="field-hint" id="note-saved-hint"></div>' +
+      '</div>' +
       historyHtml +
       '<div class="btn-group">' + claimBtn + '</div>' +
       '<div class="btn-group" style="margin-top:12px;">' +
@@ -929,6 +1133,22 @@
       '<button class="btn btn-outline" data-action="close-modal">关闭</button>' +
       '</div></div>';
     document.body.appendChild(modal);
+
+    saveContext({ openManualRecordId: recordId });
+
+    var noteEl = document.getElementById('m-note');
+    if (noteEl) {
+      var saveTimer = null;
+      noteEl.addEventListener('input', function () {
+        saveHandlerNote(recordId, this.value);
+        var hint = document.getElementById('note-saved-hint');
+        if (hint) hint.textContent = '✓ 已自动保存到本地，刷新后可恢复';
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(function () {
+          if (hint) hint.textContent = '';
+        }, 2000);
+      });
+    }
   }
 
   function openHistoryModal(recordId) {
@@ -1033,7 +1253,9 @@
           break;
         case 'nav':
           currentPage = target.getAttribute('data-page');
-          currentFilter = '';
+          if (currentPage === 'records') {
+            currentFilter = '';
+          }
           if (currentPage === 'approval') {
             if (isOnline()) pullSync().catch(function () {});
           } else if (currentPage === 'audit') {
@@ -1083,6 +1305,7 @@
           if (getRole() !== 'approver') { toast('仅审批人可放行', 'error'); return; }
           doManualAction(mid, 'approve_manual').then(function () {
             toast('已放行', 'success');
+            saveHandlerNote(mid, '');
             return pullSync();
           }).then(function () {
             var modal = document.querySelector('.modal-backdrop');
@@ -1094,6 +1317,7 @@
           if (getRole() !== 'approver') { toast('仅审批人可驳回', 'error'); return; }
           doManualAction(mid, 'reject_manual').then(function () {
             toast('已驳回', 'success');
+            saveHandlerNote(mid, '');
             return pullSync();
           }).then(function () {
             var modal = document.querySelector('.modal-backdrop');
@@ -1105,6 +1329,7 @@
           var data = collectManualData();
           doManualAction(mid, 'edit_and_resubmit', '', data).then(function () {
             toast('资料已更新，重新进入审批', 'success');
+            saveHandlerNote(mid, '');
             return pullSync();
           }).then(function () {
             var modal = document.querySelector('.modal-backdrop');
@@ -1115,6 +1340,7 @@
         case 'manual-dup':
           doManualAction(mid, 'mark_duplicate').then(function () {
             toast('已标记为重复并驳回', 'success');
+            saveHandlerNote(mid, '');
             return pullSync();
           }).then(function () {
             var modal = document.querySelector('.modal-backdrop');
@@ -1139,6 +1365,14 @@
           break;
         case 'export-audit-json':
           exportData('json', 'audit');
+          break;
+        case 'export-pending-csv':
+          if (getRole() !== 'approver') { toast('仅审批人可导出待处理队列', 'error'); break; }
+          exportData('csv', 'pending');
+          break;
+        case 'export-pending-json':
+          if (getRole() !== 'approver') { toast('仅审批人可导出待处理队列', 'error'); break; }
+          exportData('json', 'pending');
           break;
         case 'sync-now':
           fullSync();
@@ -1497,17 +1731,38 @@
 
   function exportData(format, kind) {
     var query = '';
+    var filters = {
+      format: format,
+      kind: kind,
+      department: currentDeptFilter || '',
+      status: currentStatusFilter || '',
+      pendingStatus: currentPendingStatusFilter || ''
+    };
     if (kind === 'audit') {
       query = '/api/audit?format=' + format;
+      query += '&role=' + encodeURIComponent(getRole() || 'guard');
+      if (currentDeptFilter) query += '&department=' + encodeURIComponent(currentDeptFilter);
+    } else if (kind === 'pending') {
+      query = '/api/export/pending?format=' + format;
+      query += '&role=' + encodeURIComponent(getRole() || 'guard');
+      if (currentDeptFilter) query += '&department=' + encodeURIComponent(currentDeptFilter);
+      if (currentPendingStatusFilter) query += '&status=' + encodeURIComponent(currentPendingStatusFilter);
     } else {
       query = '/api/export?format=' + format;
+      query += '&role=' + encodeURIComponent(getRole() || 'guard');
+      query += '&deviceId=' + encodeURIComponent(deviceId);
       if (currentDeptFilter) query += '&department=' + encodeURIComponent(currentDeptFilter);
       if (currentStatusFilter) query += '&status=' + encodeURIComponent(currentStatusFilter);
     }
 
     if (isOnline()) {
+      saveExportResult({
+        filters: filters,
+        queryUrl: query,
+        triggeredAt: nowISO()
+      });
       window.open(query, '_blank');
-      toast((kind === 'audit' ? '审计' : '访客') + ' ' + format.toUpperCase() + ' 导出中', 'success');
+      toast((kind === 'audit' ? '审计' : kind === 'pending' ? '待处理' : '访客') + ' ' + format.toUpperCase() + ' 导出中', 'success');
     } else {
       if (kind === 'audit') {
         var audit = getAudit();
@@ -1530,14 +1785,18 @@
           downloadFile(JSON.stringify({ exportedAt: nowISO(), count: audit.length, records: audit }, null, 2),
             'audit_log.json', 'application/json');
         }
+        saveExportResult({ filters: filters, offlineCount: audit.length, triggeredAt: nowISO() });
         toast('审计 ' + format.toUpperCase() + ' 已导出', 'success');
       } else {
         var records = getRecords();
         if (records.length === 0) { toast('无数据可导出', 'error'); return; }
+        var filteredExportRecords = records.slice();
+        if (currentDeptFilter) filteredExportRecords = filteredExportRecords.filter(function (r) { return r.department === currentDeptFilter; });
+        if (currentStatusFilter) filteredExportRecords = filteredExportRecords.filter(function (r) { return r.status === currentStatusFilter; });
         if (format === 'csv') {
           var headers = ['id', 'name', 'idTail', 'department', 'escort', 'entrance', 'validStart', 'validEnd', 'status', 'approver', 'rejectNote', 'createdAt', 'updatedAt', 'syncedAt', 'sourceDevice', 'sourceDeviceName'];
           var csv = [headers.join(',')].concat(
-            records.map(function (r) {
+            filteredExportRecords.map(function (r) {
               return headers.map(function (h) {
                 var v;
                 if (h === 'sourceDevice') {
@@ -1559,9 +1818,10 @@
           ).join('\n');
           downloadFile('\uFEFF' + csv, 'visitors.csv', 'text/csv;charset=utf-8');
         } else {
-          downloadFile(JSON.stringify({ exportedAt: nowISO(), count: records.length, records: records }, null, 2),
+          downloadFile(JSON.stringify({ exportedAt: nowISO(), count: filteredExportRecords.length, records: filteredExportRecords }, null, 2),
             'visitors.json', 'application/json');
         }
+        saveExportResult({ filters: filters, offlineCount: filteredExportRecords.length, triggeredAt: nowISO() });
         toast('访客 ' + format.toUpperCase() + ' 已导出', 'success');
       }
     }
@@ -1605,11 +1865,54 @@
     checkExpiredRecords();
   }
 
-  render();
-
-  if (isOnline() && getRole()) {
-    pullSync().then(function () {
-      render();
-    }).catch(function () { });
-  }
+  (function bootstrap() {
+    var role = getRole();
+    if (role) {
+      var restored = restoreContextFromCache();
+      if (restored) {
+        var ctx = getContext();
+        if (ctx && ctx.savedAt) {
+          var diffMs = Date.now() - new Date(ctx.savedAt).getTime();
+          if (diffMs < 30 * 60 * 1000) {
+            console.log('[上下文已恢复] 保存于 ' + formatDT(ctx.savedAt));
+          } else {
+            console.log('[上下文已过期（超过30分钟）] 使用默认页面');
+            currentPage = role === 'guard' ? 'register' : 'approval';
+            currentFilter = '';
+            currentDeptFilter = '';
+            currentStatusFilter = '';
+            currentPendingStatusFilter = '';
+          }
+        }
+      }
+    }
+    render();
+    var ctx = getContext();
+    if (ctx && ctx.openManualRecordId && role) {
+      setTimeout(function () {
+        var rec = getRecords().find(function (r) { return r.id === ctx.openManualRecordId; });
+        if (rec && (rec.status === 'pending_manual' || rec.status === 'pending_approval')) {
+          if (confirm('检测到您之前正在处理一条记录，是否继续？\n\n备注内容已自动恢复。')) {
+            openManualModal(ctx.openManualRecordId);
+          } else {
+            saveContext({ openManualRecordId: null });
+          }
+        }
+      }, 300);
+    }
+    if (isOnline() && role) {
+      fetchVersionsFromServer().then(function (v) {
+        if (v) {
+          var conflicts = detectConflicts(v);
+          saveLocalVersions({ visitors: v.visitors, pending: v.pending, serverTime: v.serverTime });
+          if (conflicts.visitors.length > 0 || conflicts.pending.length > 0) {
+            setTimeout(function () { showConflictAlert(conflicts); }, 500);
+          }
+        }
+        return pullSync();
+      }).then(function () {
+        render();
+      }).catch(function () { });
+    }
+  })();
 })();

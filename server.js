@@ -20,6 +20,25 @@ const STATUS_MAP = {
   expired: '已过期'
 };
 
+function requireApprover(req, res, next) {
+  const role = req.query.role || req.headers['x-role'] || (req.body && req.body.operatorRole);
+  if (role !== 'approver') {
+    return res.status(403).json({ ok: false, error: '该功能仅审批人可访问' });
+  }
+  next();
+}
+
+function hashRecord(rec) {
+  const str = JSON.stringify({
+    id: rec.id,
+    status: rec.status,
+    approver: rec.approver,
+    updatedAt: rec.updatedAt,
+    syncedAt: rec.syncedAt
+  });
+  return crypto.createHash('sha1').update(str).digest('hex').slice(0, 16);
+}
+
 function ensureDataDir() {
   const dir = path.dirname(DATA_FILE);
   if (!fs.existsSync(dir)) {
@@ -383,14 +402,42 @@ app.post('/api/sync/pull', (req, res) => {
 
 app.get('/api/visitors', (req, res) => {
   const data = readData();
-  const { department, status, id, name } = req.query;
+  const { department, status, id, name, role } = req.query;
   let list = data.visitors;
+  if (role === 'guard') {
+    list = list.filter(v => ['pending_sync', 'pending_approval', 'approved'].includes(v.status) || v.sourceDevice === req.query.deviceId);
+  }
   if (department) list = list.filter(v => v.department === department);
   if (status) list = list.filter(v => v.status === status);
   if (id) list = list.filter(v => v.id === id || (v.idTail && v.idTail.includes(id)));
   if (name) list = list.filter(v => v.name && v.name.includes(name));
   list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   res.json({ ok: true, records: list });
+});
+
+app.get('/api/visitors/versions', (req, res) => {
+  const data = readData();
+  const versions = data.visitors.map(v => ({
+    id: v.id,
+    status: v.status,
+    updatedAt: v.updatedAt || v.createdAt,
+    syncedAt: v.syncedAt,
+    hash: hashRecord(v)
+  }));
+  const pendingVersions = data.pendingQueue.map(p => ({
+    recordId: p.recordId,
+    status: p.status,
+    currentHandler: p.currentHandler,
+    updatedAt: p.updatedAt,
+    handlerNote: p.handlerNote
+  }));
+  res.json({
+    ok: true,
+    serverTime: new Date().toISOString(),
+    visitors: versions,
+    pending: pendingVersions,
+    auditCount: data.auditLog.length
+  });
 });
 
 app.get('/api/visitors/:id', (req, res) => {
@@ -501,15 +548,29 @@ app.patch('/api/visitors/:id', (req, res) => {
 
 app.get('/api/pending', (req, res) => {
   const data = readData();
-  const { status, sourceDevice } = req.query;
+  const { status, sourceDevice, role, department, conflictType } = req.query;
   let list = data.pendingQueue;
+  if (role === 'guard') {
+    list = list.filter(p => p.sourceDevice === req.query.deviceId ||
+      ['overlap_conflict', 'invalid_time'].includes(p.conflictType));
+  }
   if (status) list = list.filter(p => p.status === status);
   if (sourceDevice) list = list.filter(p => p.sourceDevice === sourceDevice);
+  if (conflictType) list = list.filter(p => p.conflictType === conflictType);
   list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const enriched = list.map(p => {
     const record = data.visitors.find(v => v.id === p.recordId);
-    return { ...p, currentRecord: record || null };
-  });
+    const enriched = { ...p, currentRecord: record || null };
+    if (record) {
+      enriched.recordDepartment = record.department;
+      enriched.recordName = record.name;
+      enriched.recordIdTail = record.idTail;
+    }
+    if (department) {
+      if (enriched.recordDepartment !== department) return null;
+    }
+    return enriched;
+  }).filter(Boolean);
   res.json({ ok: true, pending: enriched });
 });
 
@@ -663,15 +724,23 @@ app.post('/api/pending/:recordId/resolve', (req, res) => {
 
 app.get('/api/audit', (req, res) => {
   const data = readData();
-  const { recordId, action, operator, since, until, format } = req.query;
+  const { recordId, action, operator, since, until, format, role, department, operatorRole } = req.query;
+  if (role === 'guard') {
+    return res.status(403).json({ ok: false, error: '审计日志仅审批人可查看' });
+  }
   let list = data.auditLog.slice();
   list.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
   if (recordId) list = list.filter(a => a.recordId === recordId);
   if (action) list = list.filter(a => a.action === action);
   if (operator) list = list.filter(a => a.operator && a.operator.includes(operator));
+  if (operatorRole) list = list.filter(a => a.operatorRole === operatorRole);
   if (since) list = list.filter(a => new Date(a.time) >= new Date(since));
   if (until) list = list.filter(a => new Date(a.time) <= new Date(until));
+  if (department) {
+    const deptRecords = data.visitors.filter(v => v.department === department).map(v => v.id);
+    list = list.filter(a => deptRecords.includes(a.recordId));
+  }
 
   if (format === 'csv') {
     const headers = ['id', 'time', 'action', 'recordId', 'operator', 'operatorRole', 'note', 'detail'];
@@ -708,8 +777,15 @@ app.get('/api/audit', (req, res) => {
 
 app.get('/api/export', (req, res) => {
   const data = readData();
-  const { format = 'json', department, status } = req.query;
+  const { format = 'json', department, status, role, deviceId } = req.query;
+  if (role === 'guard' && !['pending_sync', 'pending_approval', 'approved', ''].includes(status || '')) {
+    return res.status(403).json({ ok: false, error: '保安仅可导出待同步/待审批/已放行记录' });
+  }
   let records = data.visitors.slice();
+  if (role === 'guard') {
+    records = records.filter(v => v.sourceDevice === deviceId ||
+      ['pending_sync', 'pending_approval', 'approved'].includes(v.status));
+  }
   if (department) records = records.filter(v => v.department === department);
   if (status) records = records.filter(v => v.status === status);
   records.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -748,6 +824,61 @@ app.get('/api/export', (req, res) => {
       sourceDeviceName: r.sourceDeviceName || r.deviceName || ''
     }));
     res.json({ exportedAt: new Date().toISOString(), count: exported.length, records: exported });
+  }
+});
+
+app.get('/api/export/pending', (req, res) => {
+  const data = readData();
+  const { format = 'json', department, conflictType, sourceDevice, role } = req.query;
+  if (role === 'guard') {
+    return res.status(403).json({ ok: false, error: '待处理中心导出仅审批人可访问' });
+  }
+  let list = data.pendingQueue.slice();
+  if (conflictType) list = list.filter(p => p.conflictType === conflictType);
+  if (sourceDevice) list = list.filter(p => p.sourceDevice === sourceDevice);
+  if (department) {
+    const deptRecordIds = data.visitors.filter(v => v.department === department).map(v => v.id);
+    list = list.filter(p => deptRecordIds.includes(p.recordId));
+  }
+  list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const enriched = list.map(p => {
+    const record = data.visitors.find(v => v.id === p.recordId);
+    return {
+      ...p,
+      recordName: record ? record.name : '',
+      recordIdTail: record ? record.idTail : '',
+      recordDepartment: record ? record.department : '',
+      recordStatus: record ? record.status : '',
+      conflictTypeLabel: {
+        overlap_conflict: '时段重叠',
+        invalid_time: '时段无效',
+        status_change: '状态变更冲突',
+        approver_change: '审批人变更',
+        data_update: '资料修改需复核',
+        unknown: '未知冲突',
+        resubmitted: '重新提交待审批'
+      }[p.conflictType] || p.conflictType
+    };
+  });
+
+  if (format === 'csv') {
+    const headers = ['recordId', 'recordName', 'recordIdTail', 'recordDepartment', 'conflictType', 'conflictTypeLabel', 'conflictReason', 'sourceDevice', 'sourceDeviceName', 'currentHandler', 'status', 'handlerNote', 'lastSyncedAt', 'createdAt', 'updatedAt'];
+    const csv = [headers.join(',')].concat(
+      enriched.map(p => headers.map(h => {
+        let v = String(p[h] || '');
+        if (v.includes(',') || v.includes('"') || v.includes('\n')) {
+          v = '"' + v.replace(/"/g, '""') + '"';
+        }
+        return v;
+      }).join(','))
+    ).join('\n');
+    res.header('Content-Type', 'text/csv; charset=utf-8');
+    res.header('Content-Disposition', 'attachment; filename="pending_queue.csv"');
+    res.send('\uFEFF' + csv);
+  } else {
+    res.header('Content-Type', 'application/json');
+    res.header('Content-Disposition', 'attachment; filename="pending_queue.json"');
+    res.json({ exportedAt: new Date().toISOString(), count: enriched.length, records: enriched });
   }
 });
 

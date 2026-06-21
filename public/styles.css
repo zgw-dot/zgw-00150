@@ -613,3 +613,66 @@ html, body {
   border: 1px solid var(--gray-300);
   color: var(--gray-700);
 }
+
+.diagnosis-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px 10px;
+  margin-top: 10px;
+  padding: 10px;
+  background: linear-gradient(135deg, #eff6ff 0%, #f0fdfa 100%);
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+}
+.diag-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.diag-item.diag-full {
+  grid-column: 1 / -1;
+}
+.diag-label {
+  font-size: 11px;
+  color: var(--gray-500);
+  font-weight: 500;
+}
+.diag-value {
+  font-size: 12px;
+  color: var(--gray-800);
+  font-weight: 500;
+  word-break: break-all;
+  line-height: 1.4;
+}
+.reason-inline {
+  color: #9a3412 !important;
+  background: #fff7ed;
+  padding: 3px 6px;
+  border-radius: 4px;
+}
+
+.last-export-box {
+  background: linear-gradient(135deg, #ecfeff 0%, #f0fdf4 100%);
+  border: 1px solid #a5f3fc;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+.last-export-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0e7490;
+  margin-bottom: 4px;
+}
+.last-export-time {
+  font-size: 11px;
+  color: var(--gray-500);
+  font-weight: 400;
+  margin-left: 4px;
+}
+.last-export-detail {
+  font-size: 12px;
+  color: var(--gray-600);
+  line-height: 1.6;
+}
