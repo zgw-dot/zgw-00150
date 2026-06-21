@@ -1,719 +1,673 @@
 {
   "visitors": [
     {
-      "id": "v_t1itx_mqnq1feu_f5",
-      "name": "1itx-主链路-赵六",
-      "idTail": "1itx7777",
-      "department": "教务处",
-      "escort": "张老师",
-      "entrance": "东门",
-      "validStart": "2026-06-22T04:41:24.148Z",
-      "validEnd": "2026-06-22T06:41:24.148Z",
-      "status": "approved",
-      "createdAt": "2026-06-21T11:46:49.550Z",
-      "updatedAt": "2026-06-21T11:46:49.560Z",
-      "syncedAt": "2026-06-21T11:46:49.560Z",
-      "sourceDevice": "dev_test_guard_001",
-      "sourceDeviceName": "Guard-PC",
-      "approver": "Approver-PC",
-      "approverRole": "approver"
-    },
-    {
-      "id": "v_t1itx_mqnq1ffi_mf",
-      "name": "1itx-越权测试-钱七",
-      "idTail": "1itx6666",
+      "id": "rec_1782044904897_62rjdc",
+      "name": "张三",
+      "idTail": "1234",
       "department": "计算机学院",
       "escort": "张老师",
       "entrance": "东门",
-      "validStart": "2026-06-21T22:15:03.153Z",
-      "validEnd": "2026-06-22T00:15:03.153Z",
-      "status": "pending_approval",
-      "createdAt": "2026-06-21T11:46:49.568Z",
-      "updatedAt": "2026-06-21T11:46:49.568Z",
-      "syncedAt": "2026-06-21T11:46:49.568Z",
-      "sourceDevice": "dev_test_guard_001",
-      "sourceDeviceName": "Guard-PC"
+      "validStart": "2026-06-21T11:28:24.897Z",
+      "validEnd": "2026-06-21T14:28:24.897Z",
+      "status": "created",
+      "sourceDevice": "dev_browser_guard_001",
+      "sourceDeviceName": "Browser-Guard-PC",
+      "createdAt": "2026-06-21T12:28:24.908Z",
+      "updatedAt": "2026-06-21T12:28:24.908Z",
+      "syncedAt": "2026-06-21T12:28:24.908Z",
+      "versionHash": "v_1782044904897"
     },
     {
-      "id": "v_t1itx_mqnq1ffq_ki",
-      "name": "1itx-越权测试-孙八",
-      "idTail": "1itx5555",
+      "id": "rec_1782044904897_3qhbor",
+      "name": "李四",
+      "idTail": "1234",
       "department": "计算机学院",
       "escort": "张老师",
       "entrance": "东门",
-      "validStart": "2026-06-21T14:57:51.992Z",
-      "validEnd": "2026-06-21T16:57:51.992Z",
-      "status": "approved",
-      "createdAt": "2026-06-21T11:46:49.575Z",
-      "updatedAt": "2026-06-21T11:46:49.579Z",
-      "syncedAt": "2026-06-21T11:46:49.579Z",
-      "sourceDevice": "dev_test_guard_001",
-      "sourceDeviceName": "Guard-PC",
-      "approver": "Approver-PC",
-      "approverRole": "approver"
+      "validStart": "2026-06-21T11:28:24.897Z",
+      "validEnd": "2026-06-21T14:28:24.897Z",
+      "status": "created",
+      "sourceDevice": "dev_browser_guard_001",
+      "sourceDeviceName": "Browser-Guard-PC",
+      "createdAt": "2026-06-21T12:28:24.908Z",
+      "updatedAt": "2026-06-21T12:28:24.908Z",
+      "syncedAt": "2026-06-21T12:28:24.908Z",
+      "versionHash": "v_1782044904897"
     },
     {
-      "id": "v_t1itx_mqnq1fg5_r9",
-      "name": "1itx-重复测试-周九",
-      "idTail": "1itx4444",
-      "department": "学生处",
+      "id": "rec_1782044904897_cp347y",
+      "name": "王五",
+      "idTail": "1234",
+      "department": "电子学院",
       "escort": "张老师",
       "entrance": "东门",
-      "validStart": "2026-06-22T08:32:27.117Z",
-      "validEnd": "2026-06-22T10:32:27.117Z",
-      "status": "pending_approval",
-      "createdAt": "2026-06-21T11:46:49.590Z",
-      "updatedAt": "2026-06-21T11:46:49.590Z",
-      "syncedAt": "2026-06-21T11:46:49.590Z",
-      "sourceDevice": "dev_test_guard_001",
-      "sourceDeviceName": "Guard-PC"
-    },
-    {
-      "id": "v_test_dup_mqnq1fg8",
-      "name": "1itx-重复测试-周九",
-      "idTail": "1itx4444",
-      "department": "学生处",
-      "escort": "刘老师（人工复核补录）",
-      "entrance": "东门",
-      "validStart": "2026-06-22T08:32:27.117Z",
-      "validEnd": "2026-06-22T12:32:27.117Z",
-      "status": "approved",
-      "createdAt": "2026-06-21T11:46:49.593Z",
-      "updatedAt": "2026-06-21T11:46:49.617Z",
-      "syncedAt": "2026-06-21T11:46:49.617Z",
-      "sourceDevice": "dev_test_approver_001",
-      "sourceDeviceName": "Approver-PC",
-      "approver": "Approver-PC",
-      "approverRole": "approver"
-    },
-    {
-      "id": "v_t1itx_mqnq1fh2_wq",
-      "name": "1itx-变更测试-吴十",
-      "idTail": "1itx3333",
-      "department": "计算机学院",
-      "escort": "陪同人修改",
-      "entrance": "东门",
-      "validStart": "2026-06-22T12:34:37.555Z",
-      "validEnd": "2026-06-22T14:34:37.555Z",
-      "status": "pending_manual",
-      "createdAt": "2026-06-22T11:34:37.555Z",
-      "updatedAt": "2026-06-21T11:46:49.628Z",
-      "syncedAt": "2026-06-21T11:46:49.629Z",
-      "sourceDevice": "dev_test_guard_001",
-      "sourceDeviceName": "Guard-PC",
-      "approver": "审批人乙",
-      "approverRole": "approver"
-    },
-    {
-      "id": "v_t1itx_mqnq1fhd_gz",
-      "name": "1itx-无效时段-郑十一",
-      "idTail": "1itx2222",
-      "department": "计算机学院",
-      "escort": "张老师",
-      "entrance": "东门",
-      "validStart": "2026-06-21T13:46:49.633Z",
-      "validEnd": "2026-06-21T12:46:49.633Z",
-      "status": "rejected",
-      "createdAt": "2026-06-21T11:46:49.634Z",
-      "updatedAt": "2026-06-21T11:46:49.640Z",
-      "syncedAt": "2026-06-21T11:46:49.640Z",
-      "sourceDevice": "dev_test_guard_001",
-      "sourceDeviceName": "Guard-PC",
-      "approver": "Approver-PC",
-      "approverRole": "approver",
-      "rejectNote": "时段设置错误，予以驳回"
-    },
-    {
-      "id": "v_t1itx_mqnq1fib_8r",
-      "name": "1itx-撤销测试-冯十二",
-      "idTail": "1itx1111",
-      "department": "计算机学院",
-      "escort": "张老师",
-      "entrance": "东门",
-      "validStart": "2026-06-22T00:14:05.462Z",
-      "validEnd": "2026-06-22T02:14:05.462Z",
-      "status": "revoked",
-      "createdAt": "2026-06-21T11:46:49.668Z",
-      "updatedAt": "2026-06-21T11:46:49.675Z",
-      "syncedAt": "2026-06-21T11:46:49.675Z",
-      "sourceDevice": "dev_test_guard_001",
-      "sourceDeviceName": "Guard-PC",
-      "approver": "Approver-PC",
-      "approverRole": "approver"
+      "validStart": "2026-06-21T11:28:24.897Z",
+      "validEnd": "2026-06-21T14:28:24.897Z",
+      "status": "created",
+      "sourceDevice": "dev_browser_guard_001",
+      "sourceDeviceName": "Browser-Guard-PC",
+      "createdAt": "2026-06-21T12:28:24.908Z",
+      "updatedAt": "2026-06-21T12:28:24.908Z",
+      "syncedAt": "2026-06-21T12:28:24.908Z",
+      "versionHash": "v_1782044904897"
     }
   ],
   "syncLog": [
     {
-      "time": "2026-06-21T11:46:49.550Z",
-      "deviceId": "dev_test_guard_001",
-      "deviceName": "Guard-PC",
-      "recordId": "v_t1itx_mqnq1feu_f5",
+      "time": "2026-06-21T12:28:24.908Z",
+      "deviceId": "dev_browser_guard_001",
+      "deviceName": "Browser-Guard-PC",
+      "recordId": "rec_1782044904897_62rjdc",
       "action": "created"
     },
     {
-      "time": "2026-06-21T11:46:49.568Z",
-      "deviceId": "dev_test_guard_001",
-      "deviceName": "Guard-PC",
-      "recordId": "v_t1itx_mqnq1ffi_mf",
+      "time": "2026-06-21T12:28:24.908Z",
+      "deviceId": "dev_browser_guard_001",
+      "deviceName": "Browser-Guard-PC",
+      "recordId": "rec_1782044904897_3qhbor",
       "action": "created"
     },
     {
-      "time": "2026-06-21T11:46:49.575Z",
-      "deviceId": "dev_test_guard_001",
-      "deviceName": "Guard-PC",
-      "recordId": "v_t1itx_mqnq1ffq_ki",
-      "action": "created"
-    },
-    {
-      "time": "2026-06-21T11:46:49.590Z",
-      "deviceId": "dev_test_guard_001",
-      "deviceName": "Guard-PC",
-      "recordId": "v_t1itx_mqnq1fg5_r9",
-      "action": "created"
-    },
-    {
-      "time": "2026-06-21T11:46:49.593Z",
-      "deviceId": "dev_test_approver_001",
-      "deviceName": "Approver-PC",
-      "recordId": "v_test_dup_mqnq1fg8",
-      "action": "overlap_conflict"
-    },
-    {
-      "time": "2026-06-21T11:46:49.623Z",
-      "deviceId": "dev_test_guard_001",
-      "deviceName": "Guard-PC",
-      "recordId": "v_t1itx_mqnq1fh2_wq",
-      "action": "created"
-    },
-    {
-      "time": "2026-06-21T11:46:49.629Z",
-      "deviceId": "dev_test_approver_001",
-      "deviceName": "Approver-PC",
-      "recordId": "v_t1itx_mqnq1fh2_wq",
-      "action": "pending_manual"
-    },
-    {
-      "time": "2026-06-21T11:46:49.634Z",
-      "deviceId": "dev_test_guard_001",
-      "deviceName": "Guard-PC",
-      "recordId": "v_t1itx_mqnq1fhd_gz",
-      "action": "invalid_time"
-    },
-    {
-      "time": "2026-06-21T11:46:49.668Z",
-      "deviceId": "dev_test_guard_001",
-      "deviceName": "Guard-PC",
-      "recordId": "v_t1itx_mqnq1fib_8r",
+      "time": "2026-06-21T12:28:24.908Z",
+      "deviceId": "dev_browser_guard_001",
+      "deviceName": "Browser-Guard-PC",
+      "recordId": "rec_1782044904897_cp347y",
       "action": "created"
     }
   ],
   "auditLog": [
     {
-      "id": "audit_mqnq1ff2_0c5eb8fd",
-      "time": "2026-06-21T11:46:49.551Z",
+      "id": "audit_mqnriwuk_e48d3186",
+      "time": "2026-06-21T12:28:24.908Z",
       "action": "sync_create",
-      "recordId": "v_t1itx_mqnq1feu_f5",
-      "operator": "Guard-PC",
+      "recordId": "rec_1782044904897_62rjdc",
+      "operator": "Browser-Guard-PC",
       "operatorRole": "guard",
       "detail": {
-        "deviceId": "dev_test_guard_001",
-        "deviceName": "Guard-PC"
+        "deviceId": "dev_browser_guard_001",
+        "deviceName": "Browser-Guard-PC"
       },
       "note": "新建访客登记"
     },
     {
-      "id": "audit_mqnq1ffc_e4d02226",
-      "time": "2026-06-21T11:46:49.560Z",
-      "action": "approved",
-      "recordId": "v_t1itx_mqnq1feu_f5",
-      "operator": "Approver-PC",
-      "operatorRole": "approver",
-      "detail": {
-        "oldStatus": "pending_approval",
-        "newStatus": "approved"
-      },
-      "note": ""
-    },
-    {
-      "id": "audit_mqnq1ffk_876d298d",
-      "time": "2026-06-21T11:46:49.568Z",
+      "id": "audit_mqnriwuk_00f92533",
+      "time": "2026-06-21T12:28:24.908Z",
       "action": "sync_create",
-      "recordId": "v_t1itx_mqnq1ffi_mf",
-      "operator": "Guard-PC",
+      "recordId": "rec_1782044904897_3qhbor",
+      "operator": "Browser-Guard-PC",
       "operatorRole": "guard",
       "detail": {
-        "deviceId": "dev_test_guard_001",
-        "deviceName": "Guard-PC"
+        "deviceId": "dev_browser_guard_001",
+        "deviceName": "Browser-Guard-PC"
       },
       "note": "新建访客登记"
     },
     {
-      "id": "audit_mqnq1ffn_4e227042",
-      "time": "2026-06-21T11:46:49.571Z",
-      "action": "permission_denied",
-      "recordId": "v_t1itx_mqnq1ffi_mf",
-      "operator": "Guard-PC",
-      "operatorRole": "guard",
-      "detail": {
-        "attemptedAction": "approved"
-      },
-      "note": "保安尝试审批被拒"
-    },
-    {
-      "id": "audit_mqnq1ffr_e2f9a4f4",
-      "time": "2026-06-21T11:46:49.575Z",
+      "id": "audit_mqnriwuk_37791115",
+      "time": "2026-06-21T12:28:24.908Z",
       "action": "sync_create",
-      "recordId": "v_t1itx_mqnq1ffq_ki",
-      "operator": "Guard-PC",
+      "recordId": "rec_1782044904897_cp347y",
+      "operator": "Browser-Guard-PC",
       "operatorRole": "guard",
       "detail": {
-        "deviceId": "dev_test_guard_001",
-        "deviceName": "Guard-PC"
+        "deviceId": "dev_browser_guard_001",
+        "deviceName": "Browser-Guard-PC"
       },
       "note": "新建访客登记"
     },
     {
-      "id": "audit_mqnq1ffv_f10634c4",
-      "time": "2026-06-21T11:46:49.579Z",
-      "action": "approved",
-      "recordId": "v_t1itx_mqnq1ffq_ki",
-      "operator": "Approver-PC",
+      "id": "audit_mqnrix8v_76ad769a",
+      "time": "2026-06-21T12:28:25.423Z",
+      "action": "session_save",
+      "operator": "Browser-Approver-PC",
       "operatorRole": "approver",
       "detail": {
-        "oldStatus": "pending_approval",
-        "newStatus": "approved"
+        "deviceId": "dev_browser_approver_001",
+        "deviceName": "Browser-Approver-PC",
+        "sessionId": "sess_mqnrix8v_c96cb5a4"
       },
-      "note": ""
+      "note": "保存审批会话快照"
     },
     {
-      "id": "audit_mqnq1fg0_40e4346d",
-      "time": "2026-06-21T11:46:49.584Z",
-      "action": "permission_denied",
-      "recordId": "v_t1itx_mqnq1ffq_ki",
-      "operator": "Guard-PC",
-      "operatorRole": "guard",
-      "detail": {
-        "currentStatus": "approved",
-        "attemptedAction": "revoke"
-      },
-      "note": "保安越权撤销被拒"
-    },
-    {
-      "id": "audit_mqnq1fg6_9cec8e7b",
-      "time": "2026-06-21T11:46:49.590Z",
-      "action": "sync_create",
-      "recordId": "v_t1itx_mqnq1fg5_r9",
-      "operator": "Guard-PC",
-      "operatorRole": "guard",
-      "detail": {
-        "deviceId": "dev_test_guard_001",
-        "deviceName": "Guard-PC"
-      },
-      "note": "新建访客登记"
-    },
-    {
-      "id": "audit_mqnq1fga_e28d891a",
-      "time": "2026-06-21T11:46:49.594Z",
-      "action": "sync_overlap_new",
-      "recordId": "v_test_dup_mqnq1fg8",
-      "operator": "Approver-PC",
-      "operatorRole": "guard",
-      "detail": {
-        "deviceId": "dev_test_approver_001",
-        "deviceName": "Approver-PC",
-        "existingRecordId": "v_t1itx_mqnq1fg5_r9"
-      },
-      "note": "新记录与现有记录时段重叠，转入待人工处理"
-    },
-    {
-      "id": "audit_mqnq1fgk_c1f67e0b",
-      "time": "2026-06-21T11:46:49.604Z",
-      "action": "permission_denied",
-      "recordId": "v_test_dup_mqnq1fg8",
-      "operator": "Approver-PC",
+      "id": "audit_mqnrix8z_23551c53",
+      "time": "2026-06-21T12:28:25.427Z",
+      "action": "session_restore",
+      "operator": "Browser-Approver-PC",
       "operatorRole": "approver",
       "detail": {
-        "attemptedAction": "approved"
+        "sessionId": "sess_mqnrix8v_c96cb5a4",
+        "deviceId": "dev_browser_approver_001"
       },
-      "note": "尝试审批待人工处理记录被拒"
+      "note": "恢复会话快照，保存于 2026-06-21T12:28:25.423Z"
     },
     {
-      "id": "audit_mqnq1fgo_955511d7",
-      "time": "2026-06-21T11:46:49.608Z",
-      "action": "pending_claim",
-      "recordId": "v_test_dup_mqnq1fg8",
-      "operator": "Approver-PC",
-      "operatorRole": "approver",
-      "note": "我来处理这个重复登记"
-    },
-    {
-      "id": "audit_mqnq1fgr_2f5217ab",
-      "time": "2026-06-21T11:46:49.611Z",
-      "action": "manual_resubmit",
-      "recordId": "v_test_dup_mqnq1fg8",
-      "operator": "Approver-PC",
-      "operatorRole": "approver",
-      "detail": {
-        "resolutionData": {
-          "validEnd": "2026-06-22T12:32:27.117Z",
-          "escort": "刘老师（人工复核补录）"
-        }
-      },
-      "note": "调整结束时间避开重叠，重新提交审批"
-    },
-    {
-      "id": "audit_mqnq1fgx_29813f36",
-      "time": "2026-06-21T11:46:49.618Z",
-      "action": "approved",
-      "recordId": "v_test_dup_mqnq1fg8",
-      "operator": "Approver-PC",
-      "operatorRole": "approver",
-      "detail": {
-        "oldStatus": "pending_approval",
-        "newStatus": "approved"
-      },
-      "note": ""
-    },
-    {
-      "id": "audit_mqnq1fh3_8388f01a",
-      "time": "2026-06-21T11:46:49.623Z",
-      "action": "sync_create",
-      "recordId": "v_t1itx_mqnq1fh2_wq",
-      "operator": "Guard-PC",
-      "operatorRole": "guard",
-      "detail": {
-        "deviceId": "dev_test_guard_001",
-        "deviceName": "Guard-PC"
-      },
-      "note": "新建访客登记"
-    },
-    {
-      "id": "audit_mqnq1fh6_e5da0689",
-      "time": "2026-06-21T11:46:49.626Z",
-      "action": "approved",
-      "recordId": "v_t1itx_mqnq1fh2_wq",
-      "operator": "审批人甲",
-      "operatorRole": "approver",
-      "detail": {
-        "oldStatus": "pending_approval",
-        "newStatus": "approved"
-      },
-      "note": ""
-    },
-    {
-      "id": "audit_mqnq1fha_f6850864",
-      "time": "2026-06-21T11:46:49.630Z",
-      "action": "sync_to_manual",
-      "recordId": "v_t1itx_mqnq1fh2_wq",
-      "operator": "Approver-PC",
-      "operatorRole": "guard",
-      "detail": {
-        "conflictType": "approver_change",
-        "conflictReason": "审批人变更：审批人甲 → 审批人乙",
-        "conflictDetail": {
-          "oldApprover": "审批人甲",
-          "newApprover": "审批人乙"
-        }
-      },
-      "note": "同步检测到变更，转入待人工处理"
-    },
-    {
-      "id": "audit_mqnq1fhe_510b8d5b",
-      "time": "2026-06-21T11:46:49.634Z",
-      "action": "sync_invalid_new",
-      "recordId": "v_t1itx_mqnq1fhd_gz",
-      "operator": "Guard-PC",
-      "operatorRole": "guard",
-      "detail": {
-        "deviceId": "dev_test_guard_001",
-        "deviceName": "Guard-PC"
-      },
-      "note": "新记录时段无效，转入待人工处理"
-    },
-    {
-      "id": "audit_mqnq1fhk_0ed3c66b",
-      "time": "2026-06-21T11:46:49.640Z",
-      "action": "rejected",
-      "recordId": "v_t1itx_mqnq1fhd_gz",
-      "operator": "Approver-PC",
-      "operatorRole": "approver",
-      "detail": {
-        "source": "manual_resolution"
-      },
-      "note": "时段设置错误，予以驳回"
-    },
-    {
-      "id": "audit_mqnq1fi2_e840fdf7",
-      "time": "2026-06-21T11:46:49.658Z",
+      "id": "audit_mqnrix92_cb03333d",
+      "time": "2026-06-21T12:28:25.430Z",
       "action": "export_visitors",
-      "operator": "unknown",
-      "detail": {
-        "format": "csv",
-        "count": 7,
-        "filters": {
-          "department": "",
-          "status": "",
-          "search": ""
-        }
-      },
-      "note": "导出访客数据 7 条，格式: CSV"
-    },
-    {
-      "id": "audit_mqnq1fi6_6a157774",
-      "time": "2026-06-21T11:46:49.662Z",
-      "action": "export_visitors",
-      "operator": "unknown",
-      "detail": {
-        "format": "json",
-        "count": 7,
-        "filters": {
-          "department": "",
-          "status": "",
-          "search": ""
-        }
-      },
-      "note": "导出访客数据 7 条，格式: JSON"
-    },
-    {
-      "id": "audit_mqnq1fic_92e921fe",
-      "time": "2026-06-21T11:46:49.668Z",
-      "action": "sync_create",
-      "recordId": "v_t1itx_mqnq1fib_8r",
-      "operator": "Guard-PC",
-      "operatorRole": "guard",
-      "detail": {
-        "deviceId": "dev_test_guard_001",
-        "deviceName": "Guard-PC"
-      },
-      "note": "新建访客登记"
-    },
-    {
-      "id": "audit_mqnq1fif_e7e3a4a3",
-      "time": "2026-06-21T11:46:49.671Z",
-      "action": "approved",
-      "recordId": "v_t1itx_mqnq1fib_8r",
-      "operator": "Approver-PC",
+      "operator": "Browser-Approver-PC",
       "operatorRole": "approver",
-      "detail": {
-        "oldStatus": "pending_approval",
-        "newStatus": "approved"
-      },
-      "note": ""
-    },
-    {
-      "id": "audit_mqnq1fij_f2dc1fc7",
-      "time": "2026-06-21T11:46:49.675Z",
-      "action": "revoked",
-      "recordId": "v_t1itx_mqnq1fib_8r",
-      "operator": "Approver-PC",
-      "operatorRole": "approver",
-      "detail": {
-        "oldStatus": "approved",
-        "newStatus": "revoked"
-      },
-      "note": ""
-    },
-    {
-      "id": "audit_mqnq1fj7_9e5fc3a5",
-      "time": "2026-06-21T11:46:49.699Z",
-      "action": "export_visitors",
-      "operator": "unknown",
-      "operatorRole": "guard",
-      "detail": {
-        "format": "json",
-        "count": 3,
-        "filters": {
-          "department": "",
-          "status": "approved",
-          "search": ""
-        }
-      },
-      "note": "导出访客数据 3 条，格式: JSON"
-    },
-    {
-      "id": "audit_mqnq1fjb_a5aad228",
-      "time": "2026-06-21T11:46:49.703Z",
-      "action": "export_visitors",
-      "operator": "unknown",
-      "detail": {
-        "format": "json",
-        "count": 1,
-        "filters": {
-          "department": "教务处",
-          "status": "",
-          "search": ""
-        }
-      },
-      "note": "导出访客数据 1 条，格式: JSON"
-    },
-    {
-      "id": "audit_mqnq1fje_bb7aee2d",
-      "time": "2026-06-21T11:46:49.706Z",
-      "action": "export_visitors",
-      "operator": "unknown",
-      "detail": {
-        "format": "json",
-        "count": 3,
-        "filters": {
-          "department": "",
-          "status": "approved",
-          "search": ""
-        }
-      },
-      "note": "导出访客数据 3 条，格式: JSON"
-    },
-    {
-      "id": "audit_mqnq1fji_036baace",
-      "time": "2026-06-21T11:46:49.710Z",
-      "action": "export_visitors",
-      "operator": "unknown",
       "detail": {
         "format": "json",
         "count": 1,
         "filters": {
           "department": "计算机学院",
-          "status": "pending_approval",
-          "search": ""
+          "status": "",
+          "search": "张"
         }
       },
       "note": "导出访客数据 1 条，格式: JSON"
     },
     {
-      "id": "audit_mqnq1fjp_e894de32",
-      "time": "2026-06-21T11:46:49.717Z",
+      "id": "audit_mqnrix9c_c5526459",
+      "time": "2026-06-21T12:28:25.440Z",
+      "action": "batch_claim",
+      "recordId": "rec_1782044904897_62rjdc",
+      "operator": "Browser-Approver-PC",
+      "operatorRole": "approver",
+      "detail": {
+        "sessionId": "sess_mqnrix8v_c96cb5a4",
+        "batchSize": 2
+      },
+      "note": "批量认领审批任务"
+    },
+    {
+      "id": "audit_mqnrix9c_7e00ee06",
+      "time": "2026-06-21T12:28:25.440Z",
+      "action": "batch_claim",
+      "recordId": "rec_1782044904897_3qhbor",
+      "operator": "Browser-Approver-PC",
+      "operatorRole": "approver",
+      "detail": {
+        "sessionId": "sess_mqnrix8v_c96cb5a4",
+        "batchSize": 2
+      },
+      "note": "批量认领审批任务"
+    },
+    {
+      "id": "audit_mqnrix9f_80d1026b",
+      "time": "2026-06-21T12:28:25.444Z",
+      "action": "batch_claim",
+      "recordId": "rec_1782044904897_cp347y",
+      "operator": "Browser-Approver-PC-2",
+      "operatorRole": "approver",
+      "detail": {
+        "batchSize": 2
+      },
+      "note": "尝试认领已被锁定的记录"
+    },
+    {
+      "id": "audit_mqnrix9g_056df601",
+      "time": "2026-06-21T12:28:25.444Z",
+      "action": "claim_conflict",
+      "recordId": "rec_1782044904897_62rjdc",
+      "operator": "Browser-Approver-PC-2",
+      "operatorRole": "approver",
+      "detail": {
+        "currentClaimant": "Browser-Approver-PC",
+        "claimedAt": "2026-06-21T12:28:25.440Z"
+      },
+      "note": "认领冲突：记录已被 Browser-Approver-PC 认领"
+    },
+    {
+      "id": "audit_mqnrix9l_a2860a65",
+      "time": "2026-06-21T12:28:25.449Z",
+      "action": "claim_release",
+      "recordId": "rec_1782044904897_62rjdc",
+      "operator": "Browser-Approver-PC",
+      "operatorRole": "approver",
+      "detail": {
+        "batchSize": 1
+      },
+      "note": "撤销认领"
+    },
+    {
+      "id": "audit_mqnrix9r_bf5aa7a2",
+      "time": "2026-06-21T12:28:25.455Z",
       "action": "export_visitors",
-      "operator": "unknown",
+      "operator": "Browser-Approver-PC",
+      "operatorRole": "approver",
       "detail": {
         "format": "csv",
-        "count": 1,
+        "count": 2,
         "filters": {
-          "department": "教务处",
+          "department": "计算机学院",
           "status": "",
           "search": ""
         }
       },
-      "note": "导出访客数据 1 条，格式: CSV"
+      "note": "导出访客数据 2 条，格式: CSV"
     },
     {
-      "id": "audit_mqnq1fkb_f3cdbe64",
-      "time": "2026-06-21T11:46:49.739Z",
-      "action": "session_save",
-      "operator": "Approver-PC",
+      "id": "audit_mqnrizw0_518fe743",
+      "time": "2026-06-21T12:28:28.848Z",
+      "action": "session_restore",
+      "operator": "Browser-Approver-PC",
       "operatorRole": "approver",
       "detail": {
-        "deviceId": "dev_test_approver_001",
-        "deviceName": "Approver-PC",
-        "sessionId": "sess_mqnq1fkb_3a880fbb"
+        "sessionId": "sess_mqnrix8v_c96cb5a4",
+        "deviceId": "dev_browser_approver_001"
+      },
+      "note": "恢复会话快照，保存于 2026-06-21T12:28:25.423Z"
+    },
+    {
+      "id": "audit_mqnrizw9_0d21b187",
+      "time": "2026-06-21T12:28:28.857Z",
+      "action": "export_visitors",
+      "operator": "Browser-Approver-PC",
+      "operatorRole": "approver",
+      "detail": {
+        "format": "json",
+        "count": 2,
+        "filters": {
+          "department": "计算机学院",
+          "status": "",
+          "search": ""
+        }
+      },
+      "note": "导出访客数据 2 条，格式: JSON"
+    },
+    {
+      "id": "audit_mqnrizwi_cf6c7c35",
+      "time": "2026-06-21T12:28:28.866Z",
+      "action": "claim_conflict",
+      "recordId": "rec_1782044904897_3qhbor",
+      "operator": "Browser-Approver-PC-2",
+      "operatorRole": "approver",
+      "detail": {
+        "currentClaimant": "Browser-Approver-PC",
+        "claimedAt": "2026-06-21T12:28:25.440Z"
+      },
+      "note": "认领冲突：记录已被 Browser-Approver-PC 认领"
+    },
+    {
+      "id": "audit_mqnrizwl_2a603074",
+      "time": "2026-06-21T12:28:28.869Z",
+      "action": "session_restore",
+      "operator": "New-Device-PC",
+      "operatorRole": "approver",
+      "detail": {
+        "sessionId": "sess_mqnrix8v_c96cb5a4",
+        "deviceId": "dev_browser_approver_001"
+      },
+      "note": "恢复会话快照，保存于 2026-06-21T12:28:25.423Z"
+    },
+    {
+      "id": "audit_mqnrizwr_ab6ebe5c",
+      "time": "2026-06-21T12:28:28.875Z",
+      "action": "session_save",
+      "operator": "Browser-Approver-PC",
+      "operatorRole": "approver",
+      "detail": {
+        "deviceId": "dev_browser_approver_001",
+        "deviceName": "Browser-Approver-PC",
+        "sessionId": "sess_mqnrix8v_c96cb5a4"
       },
       "note": "保存审批会话快照"
     },
     {
-      "id": "audit_mqnq1fko_ccd4c38e",
-      "time": "2026-06-21T11:46:49.752Z",
-      "action": "session_save",
-      "operator": "Approver-PC",
+      "id": "audit_mqnrizww_dfa1d3ed",
+      "time": "2026-06-21T12:28:28.880Z",
+      "action": "session_restore",
+      "operator": "Browser-Approver-PC",
       "operatorRole": "approver",
       "detail": {
-        "deviceId": "dev_test_approver_001",
-        "deviceName": "Approver-PC",
-        "sessionId": "sess_mqnq1fkb_3a880fbb"
+        "sessionId": "sess_mqnrix8v_c96cb5a4",
+        "deviceId": "dev_browser_approver_001"
       },
-      "note": "保存审批会话快照"
+      "note": "恢复会话快照，保存于 2026-06-21T12:28:28.875Z"
     },
     {
-      "id": "audit_mqnq1fkv_c4d87038",
-      "time": "2026-06-21T11:46:49.759Z",
+      "id": "audit_mqnrizx2_57ea8bfa",
+      "time": "2026-06-21T12:28:28.886Z",
+      "action": "session_restore",
+      "operator": "Browser-Approver-PC-2",
+      "operatorRole": "approver",
+      "detail": {
+        "sessionId": "sess_mqnrix8v_c96cb5a4",
+        "deviceId": "dev_browser_approver_001"
+      },
+      "note": "恢复会话快照，保存于 2026-06-21T12:28:28.875Z"
+    },
+    {
+      "id": "audit_mqnrizx8_037b687b",
+      "time": "2026-06-21T12:28:28.892Z",
+      "action": "session_restore",
+      "operator": "Browser-Approver-PC-2",
+      "operatorRole": "approver",
+      "detail": {
+        "sessionId": "sess_mqnrix8v_c96cb5a4",
+        "deviceId": "dev_browser_approver_001"
+      },
+      "note": "恢复会话快照，保存于 2026-06-21T12:28:28.875Z"
+    },
+    {
+      "id": "audit_mqnrizxa_c1d1043a",
+      "time": "2026-06-21T12:28:28.894Z",
       "action": "session_delete",
-      "operator": "Approver-PC",
+      "operator": "Browser-Approver-PC",
       "operatorRole": "approver",
       "detail": {
-        "sessionId": "sess_mqnq1fkb_3a880fbb"
+        "sessionId": "sess_mqnrix8v_c96cb5a4"
       },
       "note": "删除审批会话"
     },
     {
-      "id": "audit_mqnq1fl1_5b154f96",
-      "time": "2026-06-21T11:46:49.765Z",
+      "id": "audit_mqnrklo8_b5d35122",
+      "time": "2026-06-21T12:29:43.736Z",
       "action": "session_save",
-      "operator": "Approver-PC",
+      "operator": "Reviewer-Approver",
       "operatorRole": "approver",
       "detail": {
-        "deviceId": "dev_test_approver_001",
-        "deviceName": "Approver-PC",
-        "sessionId": "sess_mqnq1fl1_9e14a30a"
+        "deviceId": "review_device_a",
+        "deviceName": "Reviewer-PC-A",
+        "sessionId": "sess_mqnrklo8_727746fc"
       },
       "note": "保存审批会话快照"
-    }
-  ],
-  "pendingQueue": [
+    },
     {
-      "id": "v_t1itx_mqnq1fh2_wq",
-      "recordId": "v_t1itx_mqnq1fh2_wq",
-      "recordSnapshot": {
-        "id": "v_t1itx_mqnq1fh2_wq",
-        "name": "1itx-变更测试-吴十",
-        "idTail": "1itx3333",
-        "department": "计算机学院",
-        "escort": "陪同人修改",
-        "entrance": "东门",
-        "validStart": "2026-06-22T12:34:37.555Z",
-        "validEnd": "2026-06-22T14:34:37.555Z",
-        "status": "pending_manual",
-        "createdAt": "2026-06-22T11:34:37.555Z",
-        "updatedAt": "2026-06-21T11:46:49.628Z",
-        "syncedAt": "2026-06-21T11:46:49.626Z",
-        "sourceDevice": "dev_test_guard_001",
-        "sourceDeviceName": "Guard-PC",
-        "approver": "审批人乙",
-        "approverRole": "approver"
+      "id": "audit_mqnrkqe1_ffc74102",
+      "time": "2026-06-21T12:29:49.849Z",
+      "action": "session_restore",
+      "operator": "Reviewer-PC-B",
+      "operatorRole": "approver",
+      "detail": {
+        "sessionId": "sess_mqnrklo8_727746fc",
+        "deviceId": "review_device_a"
       },
-      "conflictType": "approver_change",
-      "conflictReason": "审批人变更：审批人甲 → 审批人乙",
-      "conflictDetail": {
-        "oldApprover": "审批人甲",
-        "newApprover": "审批人乙"
-      },
-      "sourceDevice": "dev_test_guard_001",
-      "sourceDeviceName": "Guard-PC",
-      "currentHandler": "",
-      "handlerNote": "",
-      "processingHistory": [
-        {
-          "time": "2026-06-21T11:46:49.629Z",
-          "action": "sync_conflict",
-          "detail": "审批人变更：审批人甲 → 审批人乙",
-          "by": "Approver-PC"
-        }
-      ],
-      "status": "pending",
-      "lastSyncedAt": "2026-06-21T11:46:49.626Z",
-      "createdAt": "2026-06-21T11:46:49.630Z",
-      "updatedAt": "2026-06-21T11:46:49.630Z"
+      "note": "恢复会话快照，保存于 2026-06-21T12:29:43.736Z"
     }
   ],
+  "pendingQueue": [],
   "approvalSessions": [
     {
-      "id": "sess_mqnq1fl1_9e14a30a",
-      "deviceId": "dev_test_approver_001",
-      "deviceName": "Approver-PC",
-      "approver": "Approver-PC",
+      "id": "sess_mqnrklo8_727746fc",
+      "deviceId": "review_device_a",
+      "deviceName": "Reviewer-PC-A",
+      "approver": "Reviewer-Approver",
       "approverRole": "approver",
       "state": {
-        "currentPage": "handover",
         "currentDeptFilter": "教务处",
-        "currentStatusFilter": "pending_manual",
-        "lastSync": "2026-06-21T11:46:49.763Z",
         "handlerNotes": {
-          "persist_test_001": {
-            "note": "服务重启后也要能恢复这条备注"
+          "reviewer_case": {
+            "updatedAt": "2026-06-21T12:29:41.4021309Z",
+            "note": "reviewer note"
           }
         },
-        "openManualRecordId": "persist_test_001"
+        "currentPage": "approval",
+        "currentStatusFilter": "pending_approval"
       },
-      "createdAt": "2026-06-21T11:46:49.765Z",
-      "updatedAt": "2026-06-21T11:46:49.765Z"
+      "createdAt": "2026-06-21T12:29:43.736Z",
+      "updatedAt": "2026-06-21T12:29:43.736Z"
     }
   ],
-  "claimLocks": [],
-  "sessionHistory": []
+  "claimLocks": [
+    {
+      "id": "lock_mqnrix9c_94458445",
+      "recordId": "rec_1782044904897_62rjdc",
+      "claimant": "Browser-Approver-PC",
+      "claimantRole": "approver",
+      "sessionId": "sess_mqnrix8v_c96cb5a4",
+      "claimedAt": "2026-06-21T12:28:25.440Z",
+      "active": false,
+      "releasedAt": "2026-06-21T12:28:25.449Z"
+    },
+    {
+      "id": "lock_mqnrix9c_ee00e232",
+      "recordId": "rec_1782044904897_3qhbor",
+      "claimant": "Browser-Approver-PC",
+      "claimantRole": "approver",
+      "sessionId": "sess_mqnrix8v_c96cb5a4",
+      "claimedAt": "2026-06-21T12:28:25.440Z",
+      "active": true
+    },
+    {
+      "id": "lock_mqnrix9f_578fc1d4",
+      "recordId": "rec_1782044904897_cp347y",
+      "claimant": "Browser-Approver-PC-2",
+      "claimantRole": "approver",
+      "sessionId": "",
+      "claimedAt": "2026-06-21T12:28:25.443Z",
+      "active": true
+    }
+  ],
+  "sessionHistory": [
+    {
+      "id": "hist_mqnrix8z_5fb2525e",
+      "sessionId": "sess_mqnrix8v_c96cb5a4",
+      "approver": "Browser-Approver-PC",
+      "deviceId": "dev_browser_approver_001",
+      "deviceName": "Browser-Approver-PC",
+      "stateSnapshot": {
+        "currentPage": "approval",
+        "currentDeptFilter": "计算机学院",
+        "currentStatusFilter": "pending_approval",
+        "currentPendingStatusFilter": "",
+        "searchKeyword": "张",
+        "currentPageNumber": 2,
+        "pageSize": 20,
+        "selectedRecords": [
+          "rec_1782044904897_62rjdc",
+          "rec_1782044904897_cp347y"
+        ],
+        "exportFields": [
+          "name",
+          "idTail",
+          "department",
+          "status",
+          "createdAt"
+        ],
+        "lastSync": "2026-06-21T12:28:25.420Z",
+        "handlerNotes": {
+          "rec_1782044904897_62rjdc": {
+            "note": "需要进一步核实身份",
+            "updatedAt": "2026-06-21T12:28:25.420Z"
+          }
+        },
+        "lastExport": {
+          "exportedAt": "2026-06-21T12:28:25.420Z",
+          "count": 15,
+          "filters": {
+            "kind": "pending",
+            "format": "csv",
+            "department": "计算机学院"
+          }
+        }
+      },
+      "restoredAt": "2026-06-21T12:28:25.427Z"
+    },
+    {
+      "id": "hist_mqnrizw0_1fcbc3d4",
+      "sessionId": "sess_mqnrix8v_c96cb5a4",
+      "approver": "Browser-Approver-PC",
+      "deviceId": "dev_browser_approver_001",
+      "deviceName": "Browser-Approver-PC",
+      "stateSnapshot": {
+        "currentPage": "approval",
+        "currentDeptFilter": "计算机学院",
+        "currentStatusFilter": "pending_approval",
+        "currentPendingStatusFilter": "",
+        "searchKeyword": "张",
+        "currentPageNumber": 2,
+        "pageSize": 20,
+        "selectedRecords": [
+          "rec_1782044904897_62rjdc",
+          "rec_1782044904897_cp347y"
+        ],
+        "exportFields": [
+          "name",
+          "idTail",
+          "department",
+          "status",
+          "createdAt"
+        ],
+        "lastSync": "2026-06-21T12:28:25.420Z",
+        "handlerNotes": {
+          "rec_1782044904897_62rjdc": {
+            "note": "需要进一步核实身份",
+            "updatedAt": "2026-06-21T12:28:25.420Z"
+          }
+        },
+        "lastExport": {
+          "exportedAt": "2026-06-21T12:28:25.420Z",
+          "count": 15,
+          "filters": {
+            "kind": "pending",
+            "format": "csv",
+            "department": "计算机学院"
+          }
+        }
+      },
+      "restoredAt": "2026-06-21T12:28:28.848Z"
+    },
+    {
+      "id": "hist_mqnrizwl_026d68e3",
+      "sessionId": "sess_mqnrix8v_c96cb5a4",
+      "approver": "Browser-Approver-PC",
+      "deviceId": "dev_browser_approver_001",
+      "deviceName": "Browser-Approver-PC",
+      "stateSnapshot": {
+        "currentPage": "approval",
+        "currentDeptFilter": "计算机学院",
+        "currentStatusFilter": "pending_approval",
+        "currentPendingStatusFilter": "",
+        "searchKeyword": "张",
+        "currentPageNumber": 2,
+        "pageSize": 20,
+        "selectedRecords": [
+          "rec_1782044904897_62rjdc",
+          "rec_1782044904897_cp347y"
+        ],
+        "exportFields": [
+          "name",
+          "idTail",
+          "department",
+          "status",
+          "createdAt"
+        ],
+        "lastSync": "2026-06-21T12:28:25.420Z",
+        "handlerNotes": {
+          "rec_1782044904897_62rjdc": {
+            "note": "需要进一步核实身份",
+            "updatedAt": "2026-06-21T12:28:25.420Z"
+          }
+        },
+        "lastExport": {
+          "exportedAt": "2026-06-21T12:28:25.420Z",
+          "count": 15,
+          "filters": {
+            "kind": "pending",
+            "format": "csv",
+            "department": "计算机学院"
+          }
+        }
+      },
+      "restoredAt": "2026-06-21T12:28:28.869Z"
+    },
+    {
+      "id": "hist_mqnrizww_bd72680d",
+      "sessionId": "sess_mqnrix8v_c96cb5a4",
+      "approver": "Browser-Approver-PC",
+      "deviceId": "dev_browser_approver_001",
+      "deviceName": "Browser-Approver-PC",
+      "stateSnapshot": {
+        "currentPage": "approval",
+        "currentDeptFilter": "计算机学院",
+        "currentStatusFilter": "pending_approval",
+        "lastSync": "2026-06-21T12:28:28.874Z",
+        "sourceDevice": "dev_browser_approver_001",
+        "handlerNotes": {
+          "handover_test_001": {
+            "note": "交接回归测试备注",
+            "updatedAt": "2026-06-21T12:28:28.874Z"
+          }
+        },
+        "lastExport": {
+          "filters": {
+            "kind": "visitors",
+            "format": "csv",
+            "department": "计算机学院"
+          },
+          "exportedAt": "2026-06-21T12:28:28.874Z"
+        }
+      },
+      "restoredAt": "2026-06-21T12:28:28.880Z"
+    },
+    {
+      "id": "hist_mqnrizx2_3a8727d1",
+      "sessionId": "sess_mqnrix8v_c96cb5a4",
+      "approver": "Browser-Approver-PC",
+      "deviceId": "dev_browser_approver_001",
+      "deviceName": "Browser-Approver-PC",
+      "stateSnapshot": {
+        "currentPage": "approval",
+        "currentDeptFilter": "计算机学院",
+        "currentStatusFilter": "pending_approval",
+        "lastSync": "2026-06-21T12:28:28.874Z",
+        "sourceDevice": "dev_browser_approver_001",
+        "handlerNotes": {
+          "handover_test_001": {
+            "note": "交接回归测试备注",
+            "updatedAt": "2026-06-21T12:28:28.874Z"
+          }
+        },
+        "lastExport": {
+          "filters": {
+            "kind": "visitors",
+            "format": "csv",
+            "department": "计算机学院"
+          },
+          "exportedAt": "2026-06-21T12:28:28.874Z"
+        }
+      },
+      "restoredAt": "2026-06-21T12:28:28.886Z"
+    },
+    {
+      "id": "hist_mqnrizx7_bf31a862",
+      "sessionId": "sess_mqnrix8v_c96cb5a4",
+      "approver": "Browser-Approver-PC",
+      "deviceId": "dev_browser_approver_001",
+      "deviceName": "Browser-Approver-PC",
+      "stateSnapshot": {
+        "currentPage": "approval",
+        "currentDeptFilter": "计算机学院",
+        "currentStatusFilter": "pending_approval",
+        "lastSync": "2026-06-21T12:28:28.874Z",
+        "sourceDevice": "dev_browser_approver_001",
+        "handlerNotes": {
+          "handover_test_001": {
+            "note": "交接回归测试备注",
+            "updatedAt": "2026-06-21T12:28:28.874Z"
+          }
+        },
+        "lastExport": {
+          "filters": {
+            "kind": "visitors",
+            "format": "csv",
+            "department": "计算机学院"
+          },
+          "exportedAt": "2026-06-21T12:28:28.874Z"
+        }
+      },
+      "restoredAt": "2026-06-21T12:28:28.891Z"
+    },
+    {
+      "id": "hist_mqnrkqe1_3f9f3a19",
+      "sessionId": "sess_mqnrklo8_727746fc",
+      "approver": "Reviewer-Approver",
+      "deviceId": "review_device_a",
+      "deviceName": "Reviewer-PC-A",
+      "stateSnapshot": {
+        "currentDeptFilter": "教务处",
+        "handlerNotes": {
+          "reviewer_case": {
+            "updatedAt": "2026-06-21T12:29:41.4021309Z",
+            "note": "reviewer note"
+          }
+        },
+        "currentPage": "approval",
+        "currentStatusFilter": "pending_approval"
+      },
+      "restoredAt": "2026-06-21T12:29:49.849Z"
+    }
+  ]
 }

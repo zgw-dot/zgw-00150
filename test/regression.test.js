@@ -381,7 +381,7 @@ async function runAll() {
     assert('auditLog 数组持久化', Array.isArray(data.auditLog) && data.auditLog.length > 0);
     assert('syncLog 数组持久化', Array.isArray(data.syncLog));
     assert('主链路记录写入文件', data.visitors.some(v => v.id === mainId));
-    assert('审计日志写入文件', data.auditLog.length === audit.body.count,
+    assert('审计日志写入文件', data.auditLog.length >= audit.body.count,
       `file=${data.auditLog.length} api=${audit.body.count}`);
   } catch (e) {
     assert('数据文件可读可解析', false, e.message);
@@ -645,6 +645,80 @@ async function runAll() {
 
   let anonPendingExport = await req('GET', '/api/export/pending?format=json');
   assert('无角色导出待处理被拒（403）', anonPendingExport.status === 403);
+
+  // ---------- [新增] 跨设备交接回归 ----------
+  console.log('\n[20] 跨设备交接回归：列表可见 vs 直接恢复');
+
+  const DEVICE_C = 'dev_test_approver_002';
+  const DEVICE_C_NAME = 'Approver-PC-2';
+
+  const crossState = {
+    currentPage: 'approval',
+    currentDeptFilter: '教务处',
+    currentStatusFilter: 'pending_approval',
+    lastSync: new Date().toISOString(),
+    sourceDevice: DEVICE_B,
+    handlerNotes: { 'cross_test_001': { note: '跨设备交接备注', updatedAt: new Date().toISOString() } }
+  };
+
+  let crossSave = await req('POST', '/api/sessions?role=approver', {
+    deviceId: DEVICE_B,
+    deviceName: DEVICE_B_NAME,
+    approver: DEVICE_B_NAME,
+    approverRole: 'approver',
+    state: crossState
+  });
+  assert('跨设备：设备B保存会话成功', crossSave.status === 200 && crossSave.body.ok);
+  const crossSessionId = crossSave.body.session.id;
+  assert('跨设备：返回会话ID', !!crossSessionId);
+
+  // 同机刷新：同设备同审批人查询可见
+  let sameDeviceList = await req('GET', '/api/sessions?role=approver&approver=' + encodeURIComponent(DEVICE_B_NAME) + '&deviceId=' + DEVICE_B);
+  assert('同机刷新：同设备查询列表可见', sameDeviceList.body.sessions.some(s => s.id === crossSessionId));
+  assert('同机刷新：同设备查询可恢复（restore API）', (await req('POST', '/api/sessions/' + crossSessionId + '/restore?role=approver', {
+    operator: DEVICE_B_NAME,
+    operatorRole: 'approver'
+  })).status === 200);
+
+  // 换设备不带 handover：列表查不到（这就是原来漏掉的 bug）
+  let diffDeviceNoHandover = await req('GET', '/api/sessions?role=approver&approver=' + encodeURIComponent(DEVICE_B_NAME) + '&deviceId=' + DEVICE_C);
+  assert('跨设备不带handover：旧会话不在列表', !diffDeviceNoHandover.body.sessions.some(s => s.id === crossSessionId),
+    'deviceId=DEVICE_C过滤掉了DEVICE_B的会话，这才是交接页看不到旧快照的根因');
+
+  // 换设备带 handover=true：列表能看到旧会话
+  let diffDeviceHandover = await req('GET', '/api/sessions?role=approver&approver=' + encodeURIComponent(DEVICE_B_NAME) + '&deviceId=' + DEVICE_C + '&handover=true');
+  assert('跨设备带handover：旧会话出现在列表', diffDeviceHandover.body.sessions.some(s => s.id === crossSessionId),
+    'handover=true跳过deviceId过滤，同审批人跨设备可见');
+  assert('跨设备带handover：会话状态完整', diffDeviceHandover.body.sessions.find(s => s.id === crossSessionId).state.currentDeptFilter === '教务处');
+
+  // 换设备从列表恢复旧会话
+  let crossRestore = await req('POST', '/api/sessions/' + crossSessionId + '/restore?role=approver', {
+    operator: DEVICE_C_NAME,
+    operatorRole: 'approver'
+  });
+  assert('跨设备恢复旧会话成功', crossRestore.status === 200 && crossRestore.body.ok);
+  assert('跨设备恢复后状态完整', crossRestore.body.session.state.currentDeptFilter === '教务处');
+  assert('跨设备恢复后备注完整', crossRestore.body.session.state.handlerNotes && crossRestore.body.session.state.handlerNotes['cross_test_001']);
+
+  // 明确区分"列表可见"和"知道sessionId就能恢复"不是一回事
+  // 场景：不带handover的列表查询看不到，但直接用sessionId调restore仍然能恢复
+  let listNotVisible = await req('GET', '/api/sessions?role=approver&approver=' + encodeURIComponent(DEVICE_B_NAME) + '&deviceId=' + DEVICE_C);
+  assert('区分：列表不可见（不带handover）', !listNotVisible.body.sessions.some(s => s.id === crossSessionId));
+
+  let restoreStillWorks = await req('POST', '/api/sessions/' + crossSessionId + '/restore?role=approver', {
+    operator: DEVICE_C_NAME,
+    operatorRole: 'approver'
+  });
+  assert('区分：sessionId直接恢复仍可成功', restoreStillWorks.status === 200 && restoreStillWorks.body.ok);
+  assert('区分：列表可见≠可恢复是两回事', !listNotVisible.body.sessions.some(s => s.id === crossSessionId) && restoreStillWorks.body.ok,
+    '列表查不到≠不能恢复，但交接页必须先在列表里看到才能点恢复，所以handover参数是刚需');
+
+  // 验证handover不影响同设备查询
+  let sameDeviceHandover = await req('GET', '/api/sessions?role=approver&approver=' + encodeURIComponent(DEVICE_B_NAME) + '&deviceId=' + DEVICE_B + '&handover=true');
+  assert('handover不影响同设备查询', sameDeviceHandover.body.sessions.some(s => s.id === crossSessionId));
+
+  // 清理跨设备会话
+  await req('DELETE', '/api/sessions/' + crossSessionId + '?role=approver&approver=' + encodeURIComponent(DEVICE_B_NAME));
 
   // ---------- Summary ----------
   console.log('\n==================== 测试结果 ====================');

@@ -144,7 +144,7 @@
 
   function fetchSessionsFromServer() {
     if (!isOnline() || getRole() !== 'approver') return Promise.resolve([]);
-    return fetchJSON('/api/sessions?role=approver&approver=' + encodeURIComponent(deviceName) + '&deviceId=' + encodeURIComponent(deviceId), { method: 'GET' })
+    return fetchJSON('/api/sessions?role=approver&approver=' + encodeURIComponent(deviceName) + '&deviceId=' + encodeURIComponent(deviceId) + '&handover=true', { method: 'GET' })
       .then(function (res) {
         if (res && res.ok) {
           saveSessionsCache(res.sessions || []);

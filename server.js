@@ -1301,10 +1301,10 @@ app.get('/api/sessions/history', requireApprover, (req, res) => {
 app.get('/api/sessions', requireApprover, (req, res) => {
   try {
     const data = readData();
-    const { approver, deviceId } = req.query;
+    const { approver, deviceId, handover } = req.query;
     let list = data.approvalSessions.slice();
     if (approver) list = list.filter(s => s.approver === approver);
-    if (deviceId) list = list.filter(s => s.deviceId === deviceId);
+    if (deviceId && handover !== 'true') list = list.filter(s => s.deviceId === deviceId);
     list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     res.json({ ok: true, sessions: list });
   } catch (e) {

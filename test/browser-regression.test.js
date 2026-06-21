@@ -460,6 +460,68 @@ async function runCrossRestartTests() {
   const newDeviceRes = await req('GET', `/api/visitors?role=approver&deviceId=${newDevice}`);
   assert('新设备可访问数据', newDeviceRes.status === 200 && newDeviceRes.body.ok);
   assert('新设备看到完整数据', !newDeviceRes.body.records.some(r => r._masked === true));
+
+  console.log('\n[3.1] 跨设备交接回归：同机刷新能恢复');
+  const handoverState = {
+    currentPage: 'approval',
+    currentDeptFilter: '计算机学院',
+    currentStatusFilter: 'pending_approval',
+    lastSync: new Date().toISOString(),
+    sourceDevice: DEVICE_B,
+    handlerNotes: { 'handover_test_001': { note: '交接回归测试备注', updatedAt: new Date().toISOString() } },
+    lastExport: { filters: { kind: 'visitors', format: 'csv', department: '计算机学院' }, exportedAt: new Date().toISOString() }
+  };
+  let handoverSave = await req('POST', '/api/sessions?role=approver', {
+    deviceId: DEVICE_B,
+    deviceName: DEVICE_B_NAME,
+    approver: DEVICE_B_NAME,
+    approverRole: 'approver',
+    state: handoverState
+  });
+  assert('交接：设备B保存会话成功', handoverSave.status === 200 && handoverSave.body.ok);
+  const handoverSessionId = handoverSave.body.session.id;
+
+  let sameDeviceListRes = await req('GET', `/api/sessions?role=approver&approver=${encodeURIComponent(DEVICE_B_NAME)}&deviceId=${DEVICE_B}`);
+  assert('同机刷新：同设备列表可查到会话', sameDeviceListRes.body.sessions.some(s => s.id === handoverSessionId));
+
+  let sameDeviceRestoreRes = await req('POST', `/api/sessions/${handoverSessionId}/restore?role=approver`, {
+    operator: DEVICE_B_NAME,
+    operatorRole: 'approver'
+  });
+  assert('同机刷新：恢复成功', sameDeviceRestoreRes.status === 200 && sameDeviceRestoreRes.body.ok);
+  assert('同机刷新：恢复后状态完整', sameDeviceRestoreRes.body.session.state.currentDeptFilter === '计算机学院');
+
+  console.log('\n[3.2] 跨设备交接回归：换设备不带handover看不到旧快照');
+  let diffDevNoHandover = await req('GET', `/api/sessions?role=approver&approver=${encodeURIComponent(DEVICE_B_NAME)}&deviceId=${DEVICE_C}`);
+  assert('跨设备不带handover：旧会话不在列表', !diffDevNoHandover.body.sessions.some(s => s.id === handoverSessionId),
+    'deviceId过滤掉了其他设备的会话');
+
+  console.log('\n[3.3] 跨设备交接回归：换设备带handover能看到并恢复旧快照');
+  let diffDevHandover = await req('GET', `/api/sessions?role=approver&approver=${encodeURIComponent(DEVICE_B_NAME)}&deviceId=${DEVICE_C}&handover=true`);
+  assert('跨设备带handover：旧会话出现在列表', diffDevHandover.body.sessions.some(s => s.id === handoverSessionId),
+    'handover=true跳过deviceId过滤');
+  assert('跨设备带handover：会话状态完整', diffDevHandover.body.sessions.find(s => s.id === handoverSessionId).state.currentDeptFilter === '计算机学院');
+
+  let crossDeviceRestoreRes = await req('POST', `/api/sessions/${handoverSessionId}/restore?role=approver`, {
+    operator: DEVICE_C_NAME,
+    operatorRole: 'approver'
+  });
+  assert('跨设备从列表恢复旧会话成功', crossDeviceRestoreRes.status === 200 && crossDeviceRestoreRes.body.ok);
+  assert('跨设备恢复后备注完整', crossDeviceRestoreRes.body.session.state.handlerNotes && crossDeviceRestoreRes.body.session.state.handlerNotes['handover_test_001']);
+
+  console.log('\n[3.4] 跨设备交接回归：列表可见 ≠ sessionId直接恢复');
+  let listHidden = await req('GET', `/api/sessions?role=approver&approver=${encodeURIComponent(DEVICE_B_NAME)}&deviceId=${DEVICE_C}`);
+  assert('列表不可见（不带handover）', !listHidden.body.sessions.some(s => s.id === handoverSessionId));
+
+  let directRestoreOk = await req('POST', `/api/sessions/${handoverSessionId}/restore?role=approver`, {
+    operator: DEVICE_C_NAME,
+    operatorRole: 'approver'
+  });
+  assert('sessionId直接恢复仍成功', directRestoreOk.status === 200 && directRestoreOk.body.ok);
+  assert('列表可见与可恢复是两回事', !listHidden.body.sessions.some(s => s.id === handoverSessionId) && directRestoreOk.body.ok,
+    '交接页必须先看到列表才能点恢复，handover参数是刚需');
+
+  await req('DELETE', `/api/sessions/${handoverSessionId}?role=approver&approver=${encodeURIComponent(DEVICE_B_NAME)}`);
 }
 
 runTests();
