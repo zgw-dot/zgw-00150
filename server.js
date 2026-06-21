@@ -50,7 +50,9 @@ function ensureDataDir() {
       syncLog: [],
       auditLog: [],
       pendingQueue: [],
-      approvalSessions: []
+      approvalSessions: [],
+      claimLocks: [],
+      sessionHistory: []
     }, null, 2));
   }
 }
@@ -64,6 +66,8 @@ function readData() {
   if (!data.auditLog) data.auditLog = [];
   if (!data.pendingQueue) data.pendingQueue = [];
   if (!data.approvalSessions) data.approvalSessions = [];
+  if (!data.claimLocks) data.claimLocks = [];
+  if (!data.sessionHistory) data.sessionHistory = [];
   return data;
 }
 
@@ -122,6 +126,98 @@ function addToPendingQueue(data, record, opts) {
 
 function removeFromPendingQueue(data, recordId) {
   data.pendingQueue = data.pendingQueue.filter(p => p.recordId !== recordId);
+}
+
+function maskSensitiveData(record, role) {
+  if (role === 'approver') return record;
+  const masked = { ...record };
+  if (masked.name) {
+    masked.name = masked.name.length > 1
+      ? masked.name[0] + '*'.repeat(masked.name.length - 1)
+      : '*';
+  }
+  if (masked.idTail) {
+    masked.idTail = '*'.repeat(Math.max(0, masked.idTail.length - 2)) +
+      (masked.idTail.slice(-2) || '**');
+  }
+  if (masked.escort) {
+    masked.escort = masked.escort.length > 1
+      ? masked.escort[0] + '*'.repeat(masked.escort.length - 1)
+      : '*';
+  }
+  masked._masked = true;
+  return masked;
+}
+
+function acquireClaimLock(data, recordIds, claimant, claimantRole, sessionId) {
+  const now = new Date().toISOString();
+  const conflicts = [];
+  const locked = [];
+
+  for (const recordId of recordIds) {
+    const existing = data.claimLocks.find(l => l.recordId === recordId && l.active);
+    if (existing) {
+      if (existing.claimant === claimant) {
+        existing.claimedAt = now;
+        existing.sessionId = sessionId || existing.sessionId;
+        locked.push(recordId);
+      } else {
+        conflicts.push({
+          recordId,
+          currentClaimant: existing.claimant,
+          claimedAt: existing.claimedAt,
+          sessionId: existing.sessionId
+        });
+      }
+    } else {
+      const lock = {
+        id: generateId('lock_'),
+        recordId,
+        claimant,
+        claimantRole: claimantRole || 'approver',
+        sessionId: sessionId || '',
+        claimedAt: now,
+        active: true
+      };
+      data.claimLocks.push(lock);
+      locked.push(recordId);
+    }
+  }
+
+  return { locked, conflicts };
+}
+
+function releaseClaimLock(data, recordIds, claimant) {
+  const now = new Date().toISOString();
+  const released = [];
+  for (const recordId of recordIds) {
+    const idx = data.claimLocks.findIndex(l =>
+      l.recordId === recordId && l.active && l.claimant === claimant
+    );
+    if (idx >= 0) {
+      data.claimLocks[idx].active = false;
+      data.claimLocks[idx].releasedAt = now;
+      released.push(recordId);
+    }
+  }
+  return released;
+}
+
+function getActiveClaimLocks(data, recordIds) {
+  return data.claimLocks.filter(l => l.active && recordIds.includes(l.recordId));
+}
+
+function addSessionHistory(data, session) {
+  const historyEntry = {
+    id: generateId('hist_'),
+    sessionId: session.id,
+    approver: session.approver,
+    deviceId: session.deviceId,
+    deviceName: session.deviceName,
+    stateSnapshot: JSON.parse(JSON.stringify(session.state || {})),
+    restoredAt: new Date().toISOString()
+  };
+  data.sessionHistory.push(historyEntry);
 }
 
 function findDuplicateOverlap(data, rec, excludeId) {
@@ -404,7 +500,7 @@ app.post('/api/sync/pull', (req, res) => {
 
 app.get('/api/visitors', (req, res) => {
   const data = readData();
-  const { department, status, id, name, role, deviceId } = req.query;
+  const { department, status, id, name, role, deviceId, search, page = 1, pageSize = 20 } = req.query;
   const effectiveRole = role || req.headers['x-role'];
   let list = data.visitors;
   if (effectiveRole === 'guard') {
@@ -414,8 +510,38 @@ app.get('/api/visitors', (req, res) => {
   if (status) list = list.filter(v => v.status === status);
   if (id) list = list.filter(v => v.id === id || (v.idTail && v.idTail.includes(id)));
   if (name) list = list.filter(v => v.name && v.name.includes(name));
+  if (search) {
+    const s = String(search).toLowerCase();
+    list = list.filter(v =>
+      (v.name && v.name.toLowerCase().includes(s)) ||
+      (v.idTail && v.idTail.toLowerCase().includes(s)) ||
+      (v.department && v.department.toLowerCase().includes(s)) ||
+      (v.escort && v.escort.toLowerCase().includes(s))
+    );
+  }
   list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  res.json({ ok: true, records: list });
+
+  const total = list.length;
+  const pageNum = parseInt(page) || 1;
+  const size = parseInt(pageSize) || 20;
+  const start = (pageNum - 1) * size;
+  const paginated = list.slice(start, start + size);
+
+  const resultList = effectiveRole !== 'approver'
+    ? paginated.map(r => maskSensitiveData(r, effectiveRole))
+    : paginated;
+
+  const activeLocks = getActiveClaimLocks(data, resultList.map(r => r.id));
+
+  res.json({
+    ok: true,
+    records: resultList,
+    total,
+    page: pageNum,
+    pageSize: size,
+    totalPages: Math.ceil(total / size),
+    claimLocks: activeLocks
+  });
 });
 
 app.get('/api/visitors/versions', (req, res) => {
@@ -445,10 +571,14 @@ app.get('/api/visitors/versions', (req, res) => {
 
 app.get('/api/visitors/:id', (req, res) => {
   const data = readData();
+  const { role } = req.query;
+  const effectiveRole = role || req.headers['x-role'];
   const v = data.visitors.find(x => x.id === req.params.id);
   if (!v) return res.status(404).json({ ok: false, error: 'not found' });
   const pending = data.pendingQueue.find(p => p.recordId === v.id);
-  res.json({ ok: true, record: v, pending: pending || null });
+  const record = effectiveRole !== 'approver' ? maskSensitiveData(v, effectiveRole) : v;
+  const lock = data.claimLocks.find(l => l.recordId === v.id && l.active);
+  res.json({ ok: true, record, pending: pending || null, claimLock: lock || null });
 });
 
 app.patch('/api/visitors/:id', (req, res) => {
@@ -782,8 +912,9 @@ app.get('/api/audit', (req, res) => {
 
 app.get('/api/export', (req, res) => {
   const data = readData();
-  const { format = 'json', department, status, role, deviceId } = req.query;
+  const { format = 'json', department, status, role, deviceId, operator, fields, search } = req.query;
   const effectiveRole = role || req.headers['x-role'];
+  const operatorName = operator || req.headers['x-operator'] || 'unknown';
   if (effectiveRole === 'guard' && !['pending_sync', 'pending_approval', 'approved', ''].includes(status || '')) {
     return res.status(403).json({ ok: false, error: '保安仅可导出待同步/待审批/已放行记录' });
   }
@@ -794,11 +925,44 @@ app.get('/api/export', (req, res) => {
   }
   if (department) records = records.filter(v => v.department === department);
   if (status) records = records.filter(v => v.status === status);
+  if (search) {
+    const s = String(search).toLowerCase();
+    records = records.filter(v =>
+      (v.name && v.name.toLowerCase().includes(s)) ||
+      (v.idTail && v.idTail.toLowerCase().includes(s)) ||
+      (v.department && v.department.toLowerCase().includes(s))
+    );
+  }
   records.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
+  if (effectiveRole !== 'approver') {
+    records = records.map(r => maskSensitiveData(r, effectiveRole));
+  }
+
+  const exportFields = fields ? String(fields).split(',') : null;
+  const exportedAt = new Date().toISOString();
+  const operatorSummary = {
+    name: operatorName,
+    role: effectiveRole,
+    deviceId: deviceId || '',
+    exportTime: exportedAt
+  };
+  const filtersApplied = { department: department || '', status: status || '', search: search || '' };
+
+  addAuditLog(data, {
+    action: 'export_visitors',
+    operator: operatorName,
+    operatorRole: effectiveRole,
+    detail: { format, count: records.length, filters: filtersApplied },
+    note: `导出访客数据 ${records.length} 条，格式: ${format.toUpperCase()}`
+  });
+  writeData(data);
+
   if (format === 'csv') {
-    const headers = ['id', 'name', 'idTail', 'department', 'escort', 'entrance', 'validStart', 'validEnd', 'status', 'statusLabel', 'approver', 'approverRole', 'rejectNote', 'createdAt', 'updatedAt', 'syncedAt', 'sourceDevice', 'sourceDeviceName'];
-    const csv = [headers.join(',')].concat(
+    const allHeaders = ['id', 'name', 'idTail', 'department', 'escort', 'entrance', 'validStart', 'validEnd', 'status', 'statusLabel', 'approver', 'approverRole', 'rejectNote', 'createdAt', 'updatedAt', 'syncedAt', 'sourceDevice', 'sourceDeviceName'];
+    const headers = exportFields ? exportFields.filter(h => allHeaders.includes(h)) : allHeaders;
+    const summaryRow = `# 导出时间: ${exportedAt}\n# 结果数量: ${records.length}\n# 操作者: ${operatorName} (${effectiveRole})\n# 筛选条件: 部门=${department || '全部'}, 状态=${status || '全部'}, 搜索=${search || '无'}\n`;
+    const csv = [summaryRow + headers.join(',')].concat(
       records.map(r => headers.map(h => {
         let v;
         if (h === 'statusLabel') {
@@ -818,18 +982,34 @@ app.get('/api/export', (req, res) => {
       }).join(','))
     ).join('\n');
     res.header('Content-Type', 'text/csv; charset=utf-8');
-    res.header('Content-Disposition', 'attachment; filename="visitors.csv"');
+    res.header('Content-Disposition', `attachment; filename="visitors_${Date.now()}.csv"`);
     res.send('\uFEFF' + csv);
   } else {
     res.header('Content-Type', 'application/json');
-    res.header('Content-Disposition', 'attachment; filename="visitors.json"');
-    const exported = records.map(r => ({
-      ...r,
-      statusLabel: STATUS_MAP[r.status] || r.status,
-      sourceDevice: r.sourceDevice || r.deviceId || '',
-      sourceDeviceName: r.sourceDeviceName || r.deviceName || ''
-    }));
-    res.json({ exportedAt: new Date().toISOString(), count: exported.length, records: exported });
+    res.header('Content-Disposition', `attachment; filename="visitors_${Date.now()}.json"`);
+    const exported = records.map(r => {
+      const base = {
+        ...r,
+        statusLabel: STATUS_MAP[r.status] || r.status,
+        sourceDevice: r.sourceDevice || r.deviceId || '',
+        sourceDeviceName: r.sourceDeviceName || r.deviceName || ''
+      };
+      if (exportFields) {
+        const filtered = {};
+        exportFields.forEach(h => { if (base[h] !== undefined) filtered[h] = base[h]; });
+        return filtered;
+      }
+      return base;
+    });
+    res.json({
+      exportedAt,
+      count: exported.length,
+      operator: operatorSummary.name,
+      operatorSummary: operatorSummary,
+      filters: filtersApplied,
+      fields: exportFields,
+      records: exported
+    });
   }
 });
 
@@ -933,6 +1113,185 @@ app.post('/api/sessions', requireApprover, (req, res) => {
 
     writeData(data);
     res.json({ ok: true, session });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/claims/batch', requireApprover, (req, res) => {
+  try {
+    const data = readData();
+    const { recordIds, claimant, claimantRole, sessionId, note } = req.body;
+    if (!Array.isArray(recordIds) || recordIds.length === 0) {
+      return res.status(400).json({ ok: false, error: '请选择要认领的记录' });
+    }
+    if (!claimant) {
+      return res.status(400).json({ ok: false, error: '认领人信息必填' });
+    }
+
+    const result = acquireClaimLock(data, recordIds, claimant, claimantRole, sessionId);
+    const now = new Date().toISOString();
+
+    recordIds.forEach(rid => {
+      const pending = data.pendingQueue.find(p => p.recordId === rid);
+      if (pending && result.locked.includes(rid)) {
+        pending.status = 'processing';
+        pending.currentHandler = claimant;
+        pending.updatedAt = now;
+        pending.processingHistory = pending.processingHistory || [];
+        pending.processingHistory.push({
+          time: now,
+          action: 'batch_claim',
+          detail: note || '批量认领',
+          by: claimant
+        });
+      }
+    });
+
+    result.locked.forEach(rid => {
+      addAuditLog(data, {
+        action: 'batch_claim',
+        recordId: rid,
+        operator: claimant,
+        operatorRole: claimantRole || 'approver',
+        detail: { sessionId, batchSize: recordIds.length },
+        note: note || '批量认领审批任务'
+      });
+    });
+
+    result.conflicts.forEach(c => {
+      addAuditLog(data, {
+        action: 'claim_conflict',
+        recordId: c.recordId,
+        operator: claimant,
+        operatorRole: claimantRole || 'approver',
+        detail: { currentClaimant: c.currentClaimant, claimedAt: c.claimedAt },
+        note: `认领冲突：记录已被 ${c.currentClaimant} 认领`
+      });
+    });
+
+    writeData(data);
+    res.json({
+      ok: true,
+      locked: result.locked,
+      conflicts: result.conflicts,
+      message: result.conflicts.length > 0
+        ? `成功认领 ${result.locked.length} 条，${result.conflicts.length} 条存在冲突`
+        : `成功认领 ${result.locked.length} 条记录`
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/claims/release', requireApprover, (req, res) => {
+  try {
+    const data = readData();
+    const { recordIds, claimant, note } = req.body;
+    if (!Array.isArray(recordIds) || recordIds.length === 0) {
+      return res.status(400).json({ ok: false, error: '请选择要撤销的记录' });
+    }
+    if (!claimant) {
+      return res.status(400).json({ ok: false, error: '操作人信息必填' });
+    }
+
+    const released = releaseClaimLock(data, recordIds, claimant);
+    const now = new Date().toISOString();
+
+    released.forEach(rid => {
+      const pending = data.pendingQueue.find(p => p.recordId === rid);
+      if (pending) {
+        pending.status = 'pending';
+        pending.currentHandler = '';
+        pending.updatedAt = now;
+        pending.processingHistory = pending.processingHistory || [];
+        pending.processingHistory.push({
+          time: now,
+          action: 'claim_release',
+          detail: note || '撤销认领',
+          by: claimant
+        });
+      }
+      addAuditLog(data, {
+        action: 'claim_release',
+        recordId: rid,
+        operator: claimant,
+        operatorRole: 'approver',
+        detail: { batchSize: recordIds.length },
+        note: note || '撤销认领'
+      });
+    });
+
+    writeData(data);
+    res.json({
+      ok: true,
+      released,
+      message: `已释放 ${released.length} 条记录的认领`
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/claims', requireApprover, (req, res) => {
+  try {
+    const data = readData();
+    const { recordId, claimant, active } = req.query;
+    let locks = data.claimLocks.slice();
+    if (active === 'true') locks = locks.filter(l => l.active);
+    if (active === 'false') locks = locks.filter(l => !l.active);
+    if (recordId) locks = locks.filter(l => l.recordId === recordId);
+    if (claimant) locks = locks.filter(l => l.claimant === claimant);
+    locks.sort((a, b) => new Date(b.claimedAt).getTime() - new Date(a.claimedAt).getTime());
+    res.json({ ok: true, claimLocks: locks });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post('/api/sessions/:id/restore', requireApprover, (req, res) => {
+  try {
+    const data = readData();
+    const session = data.approvalSessions.find(s => s.id === req.params.id);
+    if (!session) return res.status(404).json({ ok: false, error: '会话不存在' });
+
+    const { operator, operatorRole } = req.body;
+    addSessionHistory(data, session);
+
+    addAuditLog(data, {
+      action: 'session_restore',
+      operator: operator || session.approver,
+      operatorRole: operatorRole || 'approver',
+      detail: { sessionId: session.id, deviceId: session.deviceId },
+      note: `恢复会话快照，保存于 ${session.updatedAt}`
+    });
+
+    writeData(data);
+    res.json({
+      ok: true,
+      session,
+      restoredAt: new Date().toISOString()
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get('/api/sessions/history', requireApprover, (req, res) => {
+  try {
+    const data = readData();
+    const { approver, sessionId, limit = 50 } = req.query;
+    let history = data.sessionHistory.slice();
+    if (approver) history = history.filter(h => h.approver === approver);
+    if (sessionId) history = history.filter(h => h.sessionId === sessionId);
+    history.sort((a, b) => new Date(b.restoredAt).getTime() - new Date(a.restoredAt).getTime());
+    const lim = parseInt(limit) || 50;
+    res.json({ ok: true, history: history.slice(0, lim) });
   } catch (e) {
     console.error(e);
     res.status(500).json({ ok: false, error: e.message });

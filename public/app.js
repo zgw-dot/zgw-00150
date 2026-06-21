@@ -14,6 +14,12 @@
   var EXPORT_RESULT_KEY = 'cvp_last_export';
   var VERSION_CACHE_KEY = 'cvp_versions';
   var SESSIONS_KEY = 'cvp_sessions';
+  var SEARCH_KEY = 'cvp_search_keyword';
+  var PAGE_KEY = 'cvp_current_page';
+  var PAGE_SIZE_KEY = 'cvp_page_size';
+  var SELECTED_KEY = 'cvp_selected_records';
+  var EXPORT_FIELDS_KEY = 'cvp_export_fields';
+  var CLAIM_LOCKS_KEY = 'cvp_claim_locks';
   var DEPARTMENTS = [
     '校长办公室', '教务处', '学生处', '后勤处', '保卫处',
     '计算机学院', '文学院', '理学院', '工学院'
@@ -114,6 +120,27 @@
 
   function getSessionsCache() { return loadJSON(SESSIONS_KEY, []); }
   function saveSessionsCache(sessions) { saveJSON(SESSIONS_KEY, sessions); }
+  function getSearchKeyword() { return localStorage.getItem(SEARCH_KEY) || ''; }
+  function setSearchKeyword(k) { localStorage.setItem(SEARCH_KEY, k || ''); }
+  function getCurrentPage() { return parseInt(localStorage.getItem(PAGE_KEY) || '1', 10); }
+  function setCurrentPage(p) { localStorage.setItem(PAGE_KEY, String(p || 1)); }
+  function getPageSize() { return parseInt(localStorage.getItem(PAGE_SIZE_KEY) || '20', 10); }
+  function setPageSize(s) { localStorage.setItem(PAGE_SIZE_KEY, String(s || 20)); }
+  function getSelectedRecords() { return loadJSON(SELECTED_KEY, []); }
+  function saveSelectedRecords(ids) { saveJSON(SELECTED_KEY, ids || []); }
+  function toggleSelectedRecord(id) {
+    var selected = getSelectedRecords();
+    var idx = selected.indexOf(id);
+    if (idx >= 0) selected.splice(idx, 1);
+    else selected.push(id);
+    saveSelectedRecords(selected);
+    return selected;
+  }
+  function clearSelectedRecords() { saveSelectedRecords([]); }
+  function getExportFields() { return loadJSON(EXPORT_FIELDS_KEY, null); }
+  function saveExportFields(fields) { saveJSON(EXPORT_FIELDS_KEY, fields); }
+  function getClaimLocks() { return loadJSON(CLAIM_LOCKS_KEY, []); }
+  function saveClaimLocks(locks) { saveJSON(CLAIM_LOCKS_KEY, locks); }
 
   function fetchSessionsFromServer() {
     if (!isOnline() || getRole() !== 'approver') return Promise.resolve([]);
@@ -135,6 +162,11 @@
       currentDeptFilter: currentDeptFilter,
       currentStatusFilter: currentStatusFilter,
       currentPendingStatusFilter: currentPendingStatusFilter,
+      searchKeyword: getSearchKeyword(),
+      pageNumber: getCurrentPage(),
+      pageSize: getPageSize(),
+      selectedRecords: getSelectedRecords(),
+      exportFields: getExportFields(),
       lastSync: getLastSync(),
       sourceDevice: deviceId,
       sourceDeviceName: deviceName,
@@ -725,6 +757,11 @@
 
     var pending = records.filter(function (r) { return r.status === 'pending_approval'; });
     var manual = records.filter(function (r) { return r.status === 'pending_manual'; });
+    var selected = getSelectedRecords();
+    var searchKeyword = getSearchKeyword();
+    var currentPageNum = getCurrentPage();
+    var pageSize = getPageSize();
+    var claimLocks = getClaimLocks();
 
     var allDepts = DEPARTMENTS.slice();
     records.forEach(function (r) {
@@ -746,26 +783,131 @@
       return r.status === 'pending_approval' || r.status === 'pending_manual';
     });
     if (deptFilter) displayRecords = displayRecords.filter(function (r) { return r.department === deptFilter; });
+    if (searchKeyword) {
+      var s = searchKeyword.toLowerCase();
+      displayRecords = displayRecords.filter(function (r) {
+        return (r.name && r.name.toLowerCase().includes(s)) ||
+          (r.idTail && r.idTail.toLowerCase().includes(s)) ||
+          (r.department && r.department.toLowerCase().includes(s)) ||
+          (r.escort && r.escort.toLowerCase().includes(s));
+      });
+    }
     displayRecords.sort(function (a, b) {
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 
+    var total = displayRecords.length;
+    var totalPages = Math.max(1, Math.ceil(total / pageSize));
+    if (currentPageNum > totalPages) {
+      setCurrentPage(totalPages);
+      currentPageNum = totalPages;
+    }
+    var startIdx = (currentPageNum - 1) * pageSize;
+    var paginatedRecords = displayRecords.slice(startIdx, startIdx + pageSize);
+
+    var selectAllChecked = paginatedRecords.length > 0 &&
+      paginatedRecords.every(function (r) { return selected.includes(r.id); });
+    var selectAllIndeterminate = !selectAllChecked &&
+      paginatedRecords.some(function (r) { return selected.includes(r.id); });
+
     var cards = '';
-    if (displayRecords.length === 0) {
+    if (paginatedRecords.length === 0) {
       cards = '<div class="empty-state"><div class="emoji">✅</div><p>暂无匹配记录</p></div>';
     } else {
-      displayRecords.forEach(function (r) {
-        cards += renderCard(r, true);
+      paginatedRecords.forEach(function (r) {
+        var lock = claimLocks.find(function (l) { return l.recordId === r.id && l.active; });
+        var isLocked = lock && lock.claimant !== deviceName;
+        var lockTag = '';
+        if (lock) {
+          if (lock.claimant === deviceName) {
+            lockTag = ' <span class="lock-tag mine">🔒 我已认领</span>';
+          } else {
+            lockTag = ' <span class="lock-tag">🔒 ' + escapeHtml(lock.claimant) + ' 认领中</span>';
+          }
+        }
+        var isChecked = selected.includes(r.id);
+        cards += '<div class="card approval-card' + (isLocked ? ' locked' : '') + '">' +
+          '<div class="card-header">' +
+          '<label class="select-checkbox">' +
+          '<input type="checkbox" class="record-checkbox" data-id="' + r.id + '" ' +
+          (isChecked ? 'checked' : '') + (isLocked ? 'disabled' : '') + ' />' +
+          '<span></span>' +
+          '</label>' +
+          '<span class="card-title">' + escapeHtml(r.name) + '</span>' +
+          '<span class="status-badge ' + ('status-' + r.status) + '">' +
+          (STATUS_MAP[r.status] || r.status) + '</span>' +
+          '</div>' +
+          '<div class="card-body">' +
+          '<p><strong>证件尾号：</strong>' + escapeHtml(r.idTail) + '</p>' +
+          '<p><strong>来访部门：</strong>' + escapeHtml(r.department) + '</p>' +
+          '<p><strong>有效时段：</strong>' + formatDT(r.validStart) + ' ~ ' + formatDT(r.validEnd) + '</p>' +
+          (r.escort ? '<p><strong>陪同人：</strong>' + escapeHtml(r.escort) + '</p>' : '') +
+          '<p><strong>入口：</strong>' + escapeHtml(r.entrance) + '</p>' +
+          lockTag +
+          (r.approver ? '<p><strong>审批人：</strong>' + escapeHtml(r.approver) + '</p>' : '') +
+          '</div>' +
+          '<div class="card-footer">' +
+          (r.status === 'pending_approval' && getRole() === 'approver' && !isLocked
+            ? '<button class="small-btn success" data-action="approve" data-id="' + r.id + '">放行</button>' +
+              '<button class="small-btn danger" data-action="reject" data-id="' + r.id + '">拒绝</button>'
+            : '') +
+          (r.status === 'pending_manual' && getRole() && !isLocked
+            ? '<button class="small-btn primary" data-action="open-manual" data-id="' + r.id + '">人工处理</button>'
+            : '') +
+          (isLocked && lock.claimant === deviceName
+            ? '<button class="small-btn" data-action="release-single" data-id="' + r.id + '">撤销认领</button>'
+            : '') +
+          (r.status === 'pending_approval' && !isLocked
+            ? '<button class="small-btn" data-action="claim-single" data-id="' + r.id + '">认领</button>'
+            : '') +
+          '</div>' +
+          '</div>';
       });
+    }
+
+    var paginationHtml = '';
+    if (total > pageSize) {
+      paginationHtml = '<div class="pagination">' +
+        '<button class="page-btn" data-action="page-prev" ' + (currentPageNum <= 1 ? 'disabled' : '') + '>上一页</button>' +
+        '<span class="page-info">第 ' + currentPageNum + ' / ' + totalPages + ' 页，共 ' + total + ' 条</span>' +
+        '<button class="page-btn" data-action="page-next" ' + (currentPageNum >= totalPages ? 'disabled' : '') + '>下一页</button>' +
+        '</div>';
+    }
+
+    var batchBar = '';
+    if (getRole() === 'approver') {
+      batchBar = '<div class="batch-bar">' +
+        '<label class="select-all">' +
+        '<input type="checkbox" id="select-all" ' +
+        (selectAllChecked ? 'checked' : '') +
+        (selectAllIndeterminate ? 'data-indeterminate="true"' : '') + ' />' +
+        '<span>全选本页</span>' +
+        '</label>' +
+        '<span class="selected-count">已选 ' + selected.length + ' 条</span>' +
+        '<div class="batch-actions">' +
+        '<button class="small-btn primary" data-action="batch-claim" ' + (selected.length === 0 ? 'disabled' : '') + '>批量认领</button>' +
+        '<button class="small-btn" data-action="batch-release" ' + (selected.length === 0 ? 'disabled' : '') + '>撤销认领</button>' +
+        '<button class="small-btn" data-action="clear-selection" ' + (selected.length === 0 ? 'disabled' : '') + '>清空选择</button>' +
+        '</div>' +
+        '</div>';
     }
 
     return '<div class="content">' +
       renderSyncBar() +
       '<div class="section-title">审批管理</div>' +
+      '<div class="search-bar">' +
+      '<input type="text" class="form-input" id="search-input" placeholder="🔍 搜索姓名/尾号/部门/陪同人" value="' + escapeHtml(searchKeyword) + '" />' +
+      '</div>' +
       '<div class="filter-bar">' +
       '<select class="form-select" id="dept-filter" data-action="dept-filter">' + deptOptions + '</select>' +
       '<select class="form-select" id="status-filter" data-action="status-filter">' + statusOptions + '</select>' +
+      '<select class="form-select" id="page-size" data-action="page-size">' +
+      '<option value="10"' + (pageSize === 10 ? ' selected' : '') + '>10条/页</option>' +
+      '<option value="20"' + (pageSize === 20 ? ' selected' : '') + '>20条/页</option>' +
+      '<option value="50"' + (pageSize === 50 ? ' selected' : '') + '>50条/页</option>' +
+      '</select>' +
       '</div>' +
+      batchBar +
       '<div class="stat-grid">' +
       '<div class="stat-card"><div class="stat-num">' + pending.length + '</div><div class="stat-label">待审批</div></div>' +
       '<div class="stat-card warning"><div class="stat-num">' + manual.length + '</div><div class="stat-label">待人工</div></div>' +
@@ -773,6 +915,7 @@
       '<div class="stat-card"><div class="stat-num">' + records.filter(function (r) { return r.status === 'rejected'; }).length + '</div><div class="stat-label">已拒绝</div></div>' +
       '</div>' +
       cards +
+      paginationHtml +
       '</div>';
   }
 
@@ -958,6 +1101,39 @@
     var total = records.length;
     var lastSync = getLastSync();
     var lastExport = getExportResult();
+    var exportFields = getExportFields();
+    var currentDept = currentDeptFilter || '';
+    var currentStatus = currentStatusFilter || '';
+    var searchKw = getSearchKeyword();
+
+    var allFields = [
+      { key: 'name', label: '姓名' },
+      { key: 'idTail', label: '证件尾号' },
+      { key: 'department', label: '部门' },
+      { key: 'escort', label: '陪同人' },
+      { key: 'entrance', label: '入口' },
+      { key: 'validStart', label: '开始时间' },
+      { key: 'validEnd', label: '结束时间' },
+      { key: 'status', label: '状态' },
+      { key: 'statusLabel', label: '状态中文' },
+      { key: 'approver', label: '审批人' },
+      { key: 'approverRole', label: '审批人角色' },
+      { key: 'rejectNote', label: '拒绝原因' },
+      { key: 'createdAt', label: '创建时间' },
+      { key: 'updatedAt', label: '更新时间' },
+      { key: 'syncedAt', label: '同步时间' },
+      { key: 'sourceDevice', label: '来源设备ID' },
+      { key: 'sourceDeviceName', label: '来源设备名' }
+    ];
+
+    var fieldCheckboxes = allFields.map(function (f) {
+      var checked = !exportFields || exportFields.indexOf(f.key) >= 0;
+      return '<label class="field-option">' +
+        '<input type="checkbox" class="export-field-checkbox" data-field="' + f.key + '" ' +
+        (checked ? 'checked' : '') + ' />' +
+        '<span>' + f.label + '</span>' +
+        '</label>';
+    }).join('');
 
     var lastExportHtml = '';
     if (lastExport && lastExport.exportedAt) {
@@ -977,6 +1153,15 @@
         '</div>';
     }
 
+    var filterSummary = '<div class="filter-summary">' +
+      '<div class="summary-item"><span class="summary-label">当前筛选：</span>' +
+      '<span class="summary-value">部门=' + (currentDept || '全部') +
+      ' · 状态=' + (currentStatus ? (STATUS_MAP[currentStatus] || currentStatus) : '全部') +
+      (searchKw ? ' · 搜索=' + searchKw : '') + '</span></div>' +
+      '<div class="summary-item"><span class="summary-label">结果数量：</span>' +
+      '<span class="summary-value">' + total + ' 条（导出将应用当前筛选）</span></div>' +
+      '</div>';
+
     return '<div class="content">' +
       '<div class="section-title">数据导出</div>' +
       lastExportHtml +
@@ -987,6 +1172,14 @@
       '<div class="stat-card"><div class="stat-num">' + getAudit().length + '</div><div class="stat-label">审计数</div></div>' +
       '</div>' +
       '<p style="font-size:13px;color:var(--gray-500);margin-bottom:14px;">上次同步: ' + (lastSync ? formatDT(lastSync) : '从未同步') + '</p>' +
+      filterSummary +
+      '<div class="section-title">导出字段选择（留空=全部）</div>' +
+      '<div class="field-selector">' + fieldCheckboxes + '</div>' +
+      '<div class="tool-bar">' +
+      '<button class="tool-btn" data-action="save-export-fields">💾 保存字段选择</button>' +
+      '<button class="tool-btn" data-action="reset-export-fields">↺ 重置为全部</button>' +
+      '</div>' +
+      '<div class="divider"></div>' +
       '<div class="section-title">访客数据（与审批页筛选对齐）</div>' +
       '<div class="tool-bar">' +
       '<button class="tool-btn" data-action="export-csv">📄 访客 CSV</button>' +
@@ -1031,20 +1224,35 @@
       export: '数据导出', handover: '交接恢复中心'
     }[currentPage] || currentPage;
 
+    var searchKw = getSearchKeyword();
+    var curPage = getCurrentPage();
+    var pageSize = getPageSize();
+    var selectedRecords = getSelectedRecords();
+    var exportFields = getExportFields();
+    var claimLocks = getClaimLocks();
+    var activeClaimLocks = claimLocks.filter(function (l) { return l.active; }).length;
+    var myClaimLocks = claimLocks.filter(function (l) { return l.active && l.claimant === deviceName; }).length;
+
     var stateHtml = '<div class="diagnosis-grid" style="margin-bottom:14px;">' +
       '<div class="diag-item"><span class="diag-label">当前页签</span><span class="diag-value">' + escapeHtml(pageLabel) + '</span></div>' +
       '<div class="diag-item"><span class="diag-label">最近同步</span><span class="diag-value">' + (lastSync ? formatDT(lastSync) : '未同步') + '</span></div>' +
       '<div class="diag-item"><span class="diag-label">部门筛选</span><span class="diag-value">' + escapeHtml(currentDeptFilter || '全部') + '</span></div>' +
       '<div class="diag-item"><span class="diag-label">状态筛选</span><span class="diag-value">' + escapeHtml(currentStatusFilter ? (STATUS_MAP[currentStatusFilter] || currentStatusFilter) : '全部') + '</span></div>' +
+      '<div class="diag-item"><span class="diag-label">搜索词</span><span class="diag-value">' + (searchKw ? escapeHtml(searchKw) : '无') + '</span></div>' +
+      '<div class="diag-item"><span class="diag-label">分页</span><span class="diag-value">第 ' + curPage + ' 页 / ' + pageSize + ' 条/页</span></div>' +
+      '<div class="diag-item"><span class="diag-label">已勾选</span><span class="diag-value">' + selectedRecords.length + ' 条</span></div>' +
+      '<div class="diag-item"><span class="diag-label">导出字段</span><span class="diag-value">' + (exportFields && exportFields.length > 0 ? exportFields.length + ' 个已选' : '全部字段') + '</span></div>' +
       '<div class="diag-item"><span class="diag-label">待处理队列</span><span class="diag-value">' + pending.filter(function (p) { return p.status !== 'done'; }).length + ' 条</span></div>' +
       '<div class="diag-item"><span class="diag-label">备注草稿</span><span class="diag-value">' + activeNotes + ' 条</span></div>' +
+      '<div class="diag-item"><span class="diag-label">认领锁</span><span class="diag-value">' + myClaimLocks + ' 个我认领 / 共 ' + activeClaimLocks + ' 个</span></div>' +
       '<div class="diag-item diag-full"><span class="diag-label">来源设备</span><span class="diag-value">' + escapeHtml(deviceName) + ' (' + deviceId.slice(-8) + ')</span></div>';
 
     if (lastExport && lastExport.exportedAt) {
       var kindLabel = lastExport.filters && lastExport.filters.kind ? (lastExport.filters.kind === 'audit' ? '审计' : lastExport.filters.kind === 'pending' ? '待处理' : '访客') : '';
       var fmtLabel = lastExport.filters && lastExport.filters.format ? lastExport.filters.format.toUpperCase() : '';
+      var exportCount = lastExport.count ? lastExport.count + ' 条' : '';
       stateHtml += '<div class="diag-item diag-full"><span class="diag-label">最近导出</span><span class="diag-value">' +
-        escapeHtml(kindLabel + ' ' + fmtLabel + ' · ' + formatDT(lastExport.exportedAt)) + '</span></div>';
+        escapeHtml(kindLabel + ' ' + fmtLabel + ' ' + exportCount + ' · ' + formatDT(lastExport.exportedAt)) + '</span></div>';
     }
     stateHtml += '</div>';
 
@@ -1059,11 +1267,17 @@
         var sPage = st.currentPage ? ({ register: '登记', records: '记录', approval: '审批', pending: '待处理', audit: '审计', conflicts: '冲突', export: '导出', handover: '交接' }[st.currentPage] || st.currentPage) : '-';
         var sDept = st.currentDeptFilter || '全部';
         var sStatus = st.currentStatusFilter ? (STATUS_MAP[st.currentStatusFilter] || st.currentStatusFilter) : '全部';
+        var sSearch = st.searchKeyword || '-';
+        var sPageNum = st.currentPageNumber || 1;
+        var sPageSize = st.pageSize || 20;
+        var sSelected = st.selectedRecords ? st.selectedRecords.length : 0;
+        var sExportFields = st.exportFields ? st.exportFields.length + ' 个已选' : '全部';
         var sExport = '';
         if (st.lastExport && st.lastExport.exportedAt) {
           var ek = st.lastExport.filters && st.lastExport.filters.kind;
           var ef = st.lastExport.filters && st.lastExport.filters.format;
-          sExport = ' · 最近导出:' + (ek || '') + (ef ? (' ' + ef.toUpperCase()) : '');
+          var ec = st.lastExport.count ? st.lastExport.count + ' 条' : '';
+          sExport = ' · 最近导出:' + (ek || '') + (ef ? (' ' + ef.toUpperCase()) : '') + (ec ? (' ' + ec) : '');
         }
         sessionsHtml += '<div class="card session-card">' +
           '<div class="card-header">' +
@@ -1073,6 +1287,8 @@
           '<div class="card-body">' +
           '<p><strong>设备：</strong>' + escapeHtml(s.deviceName || s.deviceId || '-') + '</p>' +
           '<p><strong>页签：</strong>' + escapeHtml(sPage) + ' · <strong>部门：</strong>' + escapeHtml(sDept) + ' · <strong>状态：</strong>' + escapeHtml(sStatus) + '</p>' +
+          '<p><strong>搜索：</strong>' + escapeHtml(sSearch) + ' · <strong>分页：</strong>第 ' + sPageNum + ' 页 / ' + sPageSize + ' 条' + '</p>' +
+          '<p><strong>已勾选：</strong>' + sSelected + ' 条 · <strong>导出字段：</strong>' + sExportFields + '</p>' +
           '<p><strong>最近同步：</strong>' + (st.lastSync ? formatDT(st.lastSync) : '-') + escapeHtml(sExport) + '</p>' +
           '<p style="font-size:12px;color:var(--gray-500);margin-top:6px;">ID: ' + escapeHtml(s.id.slice(-12)) + '</p>' +
           '</div>' +
@@ -1360,6 +1576,13 @@
     if (state.currentDeptFilter !== undefined) currentDeptFilter = state.currentDeptFilter;
     if (state.currentStatusFilter !== undefined) currentStatusFilter = state.currentStatusFilter;
     if (state.currentPendingStatusFilter !== undefined) currentPendingStatusFilter = state.currentPendingStatusFilter;
+    if (state.searchKeyword !== undefined) setSearchKeyword(state.searchKeyword);
+    if (state.pageNumber) setCurrentPage(state.pageNumber);
+    if (state.pageSize) setPageSize(state.pageSize);
+    if (state.selectedRecords && Array.isArray(state.selectedRecords)) {
+      saveSelectedRecords(state.selectedRecords);
+    }
+    if (state.exportFields) saveExportFields(state.exportFields);
     if (state.lastSync) setLastSync(state.lastSync);
     if (state.handlerNotes && typeof state.handlerNotes === 'object') {
       saveJSON(HANDLER_NOTES_KEY, state.handlerNotes);
@@ -1369,6 +1592,66 @@
       saveContext({ openManualRecordId: state.openManualRecordId });
     }
     return true;
+  }
+
+  function batchClaimRecords(recordIds, note) {
+    if (!isOnline() || getRole() !== 'approver') {
+      toast('请保持在线并以审批人身份操作', 'error');
+      return Promise.reject();
+    }
+    var sessions = getSessionsCache();
+    var currentSession = sessions.find(s => s.approver === deviceName && s.deviceId === deviceId);
+    return fetchJSON('/api/claims/batch?role=approver', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recordIds: recordIds,
+        claimant: deviceName,
+        claimantRole: 'approver',
+        sessionId: currentSession ? currentSession.id : '',
+        note: note || ''
+      })
+    });
+  }
+
+  function batchReleaseClaims(recordIds, note) {
+    if (!isOnline() || getRole() !== 'approver') {
+      toast('请保持在线并以审批人身份操作', 'error');
+      return Promise.reject();
+    }
+    return fetchJSON('/api/claims/release?role=approver', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recordIds: recordIds,
+        claimant: deviceName,
+        note: note || ''
+      })
+    });
+  }
+
+  function fetchClaimLocksFromServer() {
+    if (!isOnline() || getRole() !== 'approver') return Promise.resolve([]);
+    return fetchJSON('/api/claims?role=approver&active=true', { method: 'GET' })
+      .then(function (res) {
+        if (res && res.ok) {
+          saveClaimLocks(res.claimLocks || []);
+          return res.claimLocks || [];
+        }
+        return [];
+      }).catch(function () { return getClaimLocks(); });
+  }
+
+  function restoreSessionFromServer(sessionId) {
+    if (!isOnline() || getRole() !== 'approver') return Promise.reject();
+    return fetchJSON('/api/sessions/' + sessionId + '/restore?role=approver', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        operator: deviceName,
+        operatorRole: 'approver'
+      })
+    });
   }
 
   var sessionAutoSaveTimer = null;
@@ -1593,15 +1876,195 @@
           var sess = sessions.find(function (s) { return s.id === sid; });
           if (!sess) { toast('会话不存在', 'error'); break; }
           if (confirm('确认恢复此会话？\n\n页签、筛选、备注、导出摘要等将全部恢复到当时状态。\n保存时间：' + formatDT(sess.updatedAt))) {
-            restoreSessionFromState(sess.state);
-            triggerAutoSave();
-            toast('会话已恢复，正在刷新数据...', 'success');
-            if (isOnline()) {
-              pullSync().then(function () { render(); }).catch(function () { render(); });
-            } else {
+            restoreSessionFromServer(sid).then(function (res) {
+              if (res && res.ok) {
+                restoreSessionFromState(res.session.state);
+                triggerAutoSave();
+                toast('会话已恢复，正在刷新数据...', 'success');
+                return Promise.all([pullSync(), fetchClaimLocksFromServer()]);
+              } else {
+                throw new Error('恢复失败');
+              }
+            }).then(function () {
               render();
-            }
+            }).catch(function () {
+              restoreSessionFromState(sess.state);
+              triggerAutoSave();
+              render();
+            });
           }
+          break;
+        case 'record-checkbox':
+          var recId = target.getAttribute('data-id');
+          if (target.disabled) break;
+          toggleSelectedRecord(recId);
+          triggerAutoSave();
+          render();
+          break;
+        case 'select-all':
+          var records = getRecords();
+          var searchKw = getSearchKeyword();
+          var deptF = currentDeptFilter;
+          var statusF = currentStatusFilter;
+          var pageNum = getCurrentPage();
+          var pSize = getPageSize();
+          var filtered = records.filter(function (r) {
+            if (statusF) return r.status === statusF;
+            return r.status === 'pending_approval' || r.status === 'pending_manual';
+          });
+          if (deptF) filtered = filtered.filter(function (r) { return r.department === deptF; });
+          if (searchKw) {
+            var s = searchKw.toLowerCase();
+            filtered = filtered.filter(function (r) {
+              return (r.name && r.name.toLowerCase().includes(s)) ||
+                (r.idTail && r.idTail.toLowerCase().includes(s)) ||
+                (r.department && r.department.toLowerCase().includes(s)) ||
+                (r.escort && r.escort.toLowerCase().includes(s));
+            });
+          }
+          filtered.sort(function (a, b) {
+            return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          });
+          var claimLocks = getClaimLocks();
+          filtered = filtered.filter(function (r) {
+            var lock = claimLocks.find(function (l) { return l.recordId === r.id && l.active; });
+            return !lock || lock.claimant === deviceName;
+          });
+          var start = (pageNum - 1) * pSize;
+          var pageRecords = filtered.slice(start, start + pSize);
+          var pageIds = pageRecords.map(function (r) { return r.id; });
+          var currentSelected = getSelectedRecords();
+          var allSelected = pageIds.length > 0 &&
+            pageIds.every(function (id) { return currentSelected.includes(id); });
+          var newSelected;
+          if (allSelected) {
+            newSelected = currentSelected.filter(function (id) { return !pageIds.includes(id); });
+          } else {
+            newSelected = Array.from(new Set(currentSelected.concat(pageIds)));
+          }
+          saveSelectedRecords(newSelected);
+          triggerAutoSave();
+          render();
+          break;
+        case 'search-input':
+          break;
+        case 'page-prev':
+          var cp = getCurrentPage();
+          if (cp > 1) {
+            setCurrentPage(cp - 1);
+            triggerAutoSave();
+            render();
+          }
+          break;
+        case 'page-next':
+          var cp2 = getCurrentPage();
+          setCurrentPage(cp2 + 1);
+          triggerAutoSave();
+          render();
+          break;
+        case 'page-size':
+          break;
+        case 'batch-claim':
+          var selectedIds = getSelectedRecords();
+          if (selectedIds.length === 0) { toast('请先选择要认领的记录', 'error'); break; }
+          var note = prompt('请输入认领备注（可选）：', '批量认领审批任务');
+          if (note === null) break;
+          batchClaimRecords(selectedIds, note).then(function (res) {
+            if (res && res.ok) {
+              if (res.conflicts && res.conflicts.length > 0) {
+                var conflictMsgs = res.conflicts.map(function (c) {
+                  return '• ' + c.recordId.slice(0, 12) + '... 已被 ' + c.currentClaimant + ' 认领';
+                }).join('\n');
+                toast('成功认领 ' + res.locked.length + ' 条\n冲突 ' + res.conflicts.length + ' 条：\n' + conflictMsgs, 'error');
+              } else {
+                toast(res.message || '批量认领成功', 'success');
+              }
+              clearSelectedRecords();
+              return Promise.all([pullSync(), fetchClaimLocksFromServer()]);
+            } else {
+              throw new Error(res && res.error ? res.error : '认领失败');
+            }
+          }).then(function () {
+            render();
+          }).catch(function (e) {
+            toast(e.message || '认领失败', 'error');
+          });
+          break;
+        case 'batch-release':
+          var selectedIds2 = getSelectedRecords();
+          if (selectedIds2.length === 0) { toast('请先选择要撤销的记录', 'error'); break; }
+          if (confirm('确认撤销选中 ' + selectedIds2.length + ' 条记录的认领？')) {
+            batchReleaseClaims(selectedIds2).then(function (res) {
+              if (res && res.ok) {
+                toast(res.message || '撤销成功', 'success');
+                clearSelectedRecords();
+                return Promise.all([pullSync(), fetchClaimLocksFromServer()]);
+              } else {
+                throw new Error(res && res.error ? res.error : '撤销失败');
+              }
+            }).then(function () {
+              render();
+            }).catch(function (e) {
+              toast(e.message || '撤销失败', 'error');
+            });
+          }
+          break;
+        case 'clear-selection':
+          clearSelectedRecords();
+          triggerAutoSave();
+          render();
+          break;
+        case 'claim-single':
+          var singleId = target.getAttribute('data-id');
+          batchClaimRecords([singleId], '单独认领').then(function (res) {
+            if (res && res.ok) {
+              if (res.conflicts && res.conflicts.length > 0) {
+                var c = res.conflicts[0];
+                toast('该记录已被 ' + c.currentClaimant + ' 认领', 'error');
+              } else {
+                toast('认领成功', 'success');
+              }
+              return Promise.all([pullSync(), fetchClaimLocksFromServer()]);
+            }
+          }).then(function () {
+            render();
+          }).catch(function (e) {
+            toast(e.message || '认领失败', 'error');
+          });
+          break;
+        case 'release-single':
+          var releaseId = target.getAttribute('data-id');
+          if (confirm('确认撤销该记录的认领？')) {
+            batchReleaseClaims([releaseId]).then(function (res) {
+              if (res && res.ok) {
+                toast('已撤销认领', 'success');
+                return Promise.all([pullSync(), fetchClaimLocksFromServer()]);
+              }
+            }).then(function () {
+              render();
+            }).catch(function (e) {
+              toast(e.message || '撤销失败', 'error');
+            });
+          }
+          break;
+        case 'save-export-fields':
+          var checkedFields = [];
+          document.querySelectorAll('.export-field-checkbox:checked').forEach(function (cb) {
+            checkedFields.push(cb.getAttribute('data-field'));
+          });
+          if (checkedFields.length === 0) {
+            toast('请至少选择一个字段', 'error');
+            break;
+          }
+          saveExportFields(checkedFields);
+          triggerAutoSave();
+          toast('字段选择已保存', 'success');
+          break;
+        case 'reset-export-fields':
+          saveExportFields(null);
+          triggerAutoSave();
+          toast('已重置为全部字段', 'success');
+          render();
           break;
         case 'delete-session':
           var delSid = target.getAttribute('data-sid');
@@ -1646,6 +2109,98 @@
     if (pendingStatusFilter) {
       pendingStatusFilter.addEventListener('change', function () {
         currentPendingStatusFilter = this.value;
+        triggerAutoSave();
+        render();
+      });
+    }
+
+    var searchInput = document.getElementById('search-input');
+    if (searchInput) {
+      var searchTimer = null;
+      searchInput.addEventListener('input', function () {
+        var self = this;
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(function () {
+          setSearchKeyword(self.value);
+          setCurrentPage(1);
+          triggerAutoSave();
+          render();
+        }, 300);
+      });
+    }
+
+    var pageSizeSelect = document.getElementById('page-size');
+    if (pageSizeSelect) {
+      pageSizeSelect.addEventListener('change', function () {
+        setPageSize(parseInt(this.value, 10));
+        setCurrentPage(1);
+        triggerAutoSave();
+        render();
+      });
+    }
+
+    var selectAllCheckbox = document.getElementById('select-all');
+    if (selectAllCheckbox) {
+      if (selectAllCheckbox.getAttribute('data-indeterminate') === 'true') {
+        selectAllCheckbox.indeterminate = true;
+      }
+    }
+
+    var recordCheckboxes = document.querySelectorAll('.record-checkbox');
+    recordCheckboxes.forEach(function (cb) {
+      cb.addEventListener('change', function (e) {
+        e.stopPropagation();
+        var recId = this.getAttribute('data-id');
+        if (!this.disabled) {
+          toggleSelectedRecord(recId);
+          triggerAutoSave();
+          render();
+        }
+      });
+    });
+
+    var selectAllEl = document.getElementById('select-all');
+    if (selectAllEl) {
+      selectAllEl.addEventListener('change', function () {
+        var records = getRecords();
+        var searchKw = getSearchKeyword();
+        var deptF = currentDeptFilter;
+        var statusF = currentStatusFilter;
+        var pageNum = getCurrentPage();
+        var pSize = getPageSize();
+        var filtered = records.filter(function (r) {
+          if (statusF) return r.status === statusF;
+          return r.status === 'pending_approval' || r.status === 'pending_manual';
+        });
+        if (deptF) filtered = filtered.filter(function (r) { return r.department === deptF; });
+        if (searchKw) {
+          var s = searchKw.toLowerCase();
+          filtered = filtered.filter(function (r) {
+            return (r.name && r.name.toLowerCase().includes(s)) ||
+              (r.idTail && r.idTail.toLowerCase().includes(s)) ||
+              (r.department && r.department.toLowerCase().includes(s)) ||
+              (r.escort && r.escort.toLowerCase().includes(s));
+          });
+        }
+        filtered.sort(function (a, b) {
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
+        var claimLocks = getClaimLocks();
+        filtered = filtered.filter(function (r) {
+          var lock = claimLocks.find(function (l) { return l.recordId === r.id && l.active; });
+          return !lock || lock.claimant === deviceName;
+        });
+        var start = (pageNum - 1) * pSize;
+        var pageRecords = filtered.slice(start, start + pSize);
+        var pageIds = pageRecords.map(function (r) { return r.id; });
+        var currentSelected = getSelectedRecords();
+        var newSelected;
+        if (this.checked) {
+          newSelected = Array.from(new Set(currentSelected.concat(pageIds)));
+        } else {
+          newSelected = currentSelected.filter(function (id) { return !pageIds.includes(id); });
+        }
+        saveSelectedRecords(newSelected);
         triggerAutoSave();
         render();
       });
@@ -1956,28 +2511,41 @@
 
   function exportData(format, kind) {
     var query = '';
+    var exportFields = getExportFields();
     var filters = {
       format: format,
       kind: kind,
       department: currentDeptFilter || '',
       status: currentStatusFilter || '',
-      pendingStatus: currentPendingStatusFilter || ''
+      pendingStatus: currentPendingStatusFilter || '',
+      search: getSearchKeyword() || '',
+      fields: exportFields
     };
     if (kind === 'audit') {
       query = '/api/audit?format=' + format;
       query += '&role=' + encodeURIComponent(getRole() || 'guard');
+      query += '&operator=' + encodeURIComponent(deviceName);
       if (currentDeptFilter) query += '&department=' + encodeURIComponent(currentDeptFilter);
     } else if (kind === 'pending') {
       query = '/api/export/pending?format=' + format;
       query += '&role=' + encodeURIComponent(getRole() || 'guard');
+      query += '&operator=' + encodeURIComponent(deviceName);
       if (currentDeptFilter) query += '&department=' + encodeURIComponent(currentDeptFilter);
       if (currentPendingStatusFilter) query += '&status=' + encodeURIComponent(currentPendingStatusFilter);
+      if (exportFields && exportFields.length > 0) {
+        query += '&fields=' + encodeURIComponent(exportFields.join(','));
+      }
     } else {
       query = '/api/export?format=' + format;
       query += '&role=' + encodeURIComponent(getRole() || 'guard');
       query += '&deviceId=' + encodeURIComponent(deviceId);
+      query += '&operator=' + encodeURIComponent(deviceName);
       if (currentDeptFilter) query += '&department=' + encodeURIComponent(currentDeptFilter);
       if (currentStatusFilter) query += '&status=' + encodeURIComponent(currentStatusFilter);
+      if (getSearchKeyword()) query += '&search=' + encodeURIComponent(getSearchKeyword());
+      if (exportFields && exportFields.length > 0) {
+        query += '&fields=' + encodeURIComponent(exportFields.join(','));
+      }
     }
 
     if (isOnline()) {
@@ -2127,10 +2695,12 @@
     }
     if (isOnline() && role) {
       var serverSessionPromise = role === 'approver' ? fetchSessionsFromServer() : Promise.resolve([]);
+      var claimLocksPromise = role === 'approver' ? fetchClaimLocksFromServer() : Promise.resolve([]);
       Promise.all([
         fetchVersionsFromServer(),
         pullSync(),
-        serverSessionPromise
+        serverSessionPromise,
+        claimLocksPromise
       ]).then(function (results) {
         var v = results[0];
         var sessions = results[2] || [];

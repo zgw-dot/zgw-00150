@@ -690,3 +690,236 @@ html, body {
 .session-card .card-footer {
   border-top: 1px dashed var(--gray-200);
 }
+
+.search-bar {
+  margin-bottom: 12px;
+}
+
+.search-bar .form-input {
+  padding-left: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'%3E%3C/circle%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'%3E%3C/line%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 12px center;
+}
+
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, #eff6ff 0%, #f0fdfa 100%);
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.select-all {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--gray-700);
+}
+
+.select-all input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.selected-count {
+  font-size: 12px;
+  color: var(--primary);
+  font-weight: 500;
+}
+
+.batch-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.batch-actions .small-btn {
+  flex: none;
+}
+
+.select-checkbox {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.select-checkbox input {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  z-index: 2;
+}
+
+.select-checkbox span {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--gray-300);
+  border-radius: 4px;
+  display: inline-block;
+  position: relative;
+  background: #fff;
+  transition: all 0.15s;
+}
+
+.select-checkbox input:checked + span {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
+.select-checkbox input:checked + span::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 5px;
+  height: 10px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.select-checkbox input:disabled + span {
+  background: var(--gray-100);
+  border-color: var(--gray-200);
+  cursor: not-allowed;
+}
+
+.approval-card .card-header {
+  gap: 10px;
+}
+
+.approval-card.locked {
+  opacity: 0.7;
+  background: var(--gray-50);
+}
+
+.lock-tag {
+  display: inline-block;
+  background: var(--warning);
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  margin: 2px 2px;
+}
+
+.lock-tag.mine {
+  background: var(--success);
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 12px;
+  background: var(--gray-50);
+  border-radius: 8px;
+}
+
+.page-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--gray-300);
+  background: #fff;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--gray-700);
+}
+
+.page-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.page-info {
+  font-size: 13px;
+  color: var(--gray-600);
+}
+
+.field-selector {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 12px;
+  background: var(--gray-50);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.field-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.field-option:hover {
+  background: var(--gray-100);
+}
+
+.field-option input {
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.filter-summary {
+  background: linear-gradient(135deg, #f0fdf4 0%, #ecfeff 100%);
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+.summary-item {
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.summary-item:last-child {
+  margin-bottom: 0;
+}
+
+.summary-label {
+  color: var(--gray-500);
+  flex-shrink: 0;
+}
+
+.summary-value {
+  color: var(--gray-800);
+  font-weight: 500;
+  word-break: break-all;
+}
+
+@media (max-width: 400px) {
+  .field-selector {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .batch-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+  .batch-actions .small-btn {
+    flex: 1;
+  }
+}
