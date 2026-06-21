@@ -1,0 +1,58 @@
+{
+  "visitors": [
+    {
+      "id": "v_mqn4a3dh_9btew2",
+      "name": "张三",
+      "idTail": "1234",
+      "department": "计算机学院",
+      "validStart": "2026-06-21T01:37:00.000Z",
+      "validEnd": "2026-06-21T05:37:00.000Z",
+      "escort": "李老师",
+      "entrance": "东门",
+      "status": "approved",
+      "deviceId": "dev_mqn3wq6w_r34xt9",
+      "deviceName": "PC",
+      "sourceDevice": "dev_mqn3wq6w_r34xt9",
+      "sourceDeviceName": "PC",
+      "createdAt": "2026-06-21T01:37:42.293Z",
+      "updatedAt": "2026-06-21T01:42:10.938Z",
+      "syncedAt": "2026-06-21T01:42:10.938Z",
+      "approver": "PC",
+      "approverRole": "approver"
+    },
+    {
+      "id": "v_mqn4jurh_v2e8tl",
+      "name": "李四",
+      "idTail": "5678",
+      "department": "教务处",
+      "validStart": "2026-06-21T01:43:00.000Z",
+      "validEnd": "2026-06-21T05:43:00.000Z",
+      "escort": "",
+      "entrance": "西门",
+      "status": "pending_sync",
+      "deviceId": "dev_mqn3wq6w_r34xt9",
+      "deviceName": "PC",
+      "sourceDevice": "dev_mqn3wq6w_r34xt9",
+      "sourceDeviceName": "PC",
+      "createdAt": "2026-06-21T01:45:17.693Z",
+      "updatedAt": "2026-06-21T01:45:17.693Z",
+      "syncedAt": "2026-06-21T01:45:18.016Z"
+    }
+  ],
+  "syncLog": [
+    {
+      "time": "2026-06-21T01:37:42.622Z",
+      "deviceId": "dev_mqn3wq6w_r34xt9",
+      "deviceName": "PC",
+      "recordId": "v_mqn4a3dh_9btew2",
+      "action": "created"
+    },
+    {
+      "time": "2026-06-21T01:45:18.016Z",
+      "deviceId": "dev_mqn3wq6w_r34xt9",
+      "deviceName": "PC",
+      "recordId": "v_mqn4jurh_v2e8tl",
+      "action": "created"
+    }
+  ]
+}

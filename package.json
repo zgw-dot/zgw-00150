@@ -1,0 +1,12 @@
+{
+  "name": "campus-visitor-pass",
+  "version": "1.0.0",
+  "description": "校园临时访客通行移动Web应用",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
